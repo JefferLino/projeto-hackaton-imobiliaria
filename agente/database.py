@@ -7,8 +7,11 @@ import os
 import sqlite3
 import time
 from contextlib import contextmanager
+from pathlib import Path
 
-DB_PATH = os.getenv('DATABASE_PATH', 'imobiliaria.sqlite3')
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_configured_path = Path(os.getenv('DATABASE_PATH') or 'database/imobiliaria.sqlite3').expanduser()
+DB_PATH = str(_configured_path if _configured_path.is_absolute() else PROJECT_ROOT / _configured_path)
 
 
 class DatabaseError(Exception):
@@ -23,6 +26,7 @@ class DatabaseError(Exception):
 @contextmanager
 def db():
     """Abre conexão e confirma a transação, ou desfaz alterações em caso de erro."""
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH, timeout=15)
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA foreign_keys=ON')

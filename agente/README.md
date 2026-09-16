@@ -10,7 +10,7 @@ As operações de SQLite ficam em `database.py`: conexão, criação e migraçã
 
 A API chama `llm.extract_preferences(current, messages)` para extrair os dados e `llm.generate_reply(current, instruction, messages)` para formular as perguntas. O módulo não acessa o banco, não depende de FastAPI e não guarda conversas em memória entre chamadas. As configurações `OLLAMA_MODEL` e `OLLAMA_URL` continuam iguais. Erros do modelo são lançados como `LLMError`, que a API traduz para HTTP 503.
 
-O caminho do banco continua configurado por `DATABASE_PATH`, com padrão `imobiliaria.sqlite3`. A separação não exige recriar o banco. A inicialização chama `database.init_db()` automaticamente. O processamento usa `begin_response()`, `finish_response()` e `release_response()` para manter as transações curtas, executar a IA fora delas e liberar o bloqueio mesmo em caso de erro.
+O caminho do banco continua configurado por `DATABASE_PATH`, com padrão `database/imobiliaria.sqlite3` na raiz do projeto principal. A separação não exige recriar o banco. A inicialização chama `database.init_db()` automaticamente. O processamento usa `begin_response()`, `finish_response()` e `release_response()` para manter as transações curtas, executar a IA fora delas e liberar o bloqueio mesmo em caso de erro.
 
 ```powershell
 python -m venv .venv
@@ -47,7 +47,7 @@ Abra http://127.0.0.1:5500. O endereço da API está em `interface-teste/config.
 Configuração opcional via variáveis de ambiente:
 
 ```powershell
-$env:DATABASE_PATH = 'imobiliaria.sqlite3'
+$env:DATABASE_PATH = 'database/imobiliaria.sqlite3'
 $env:OLLAMA_URL = 'http://localhost:11434'
 $env:OLLAMA_MODEL = 'qwen3:4b'
 $env:API_KEY = 'defina-uma-chave-secreta'
@@ -100,3 +100,5 @@ Testes usam SQLite temporário e IA substituída apenas nos testes, verificando 
 
 Integração de saída estruturada conforme a documentação oficial: https://docs.ollama.com/capabilities/structured-outputs
 
+
+Caminhos relativos em `DATABASE_PATH` sao resolvidos a partir da raiz do projeto principal (pasta pai de `agente`), nunca do diretorio de execucao. A pasta de destino e criada automaticamente.
