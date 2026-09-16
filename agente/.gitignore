@@ -1,0 +1,34 @@
+# Ambientes virtuais Python
+.venv/
+venv/
+env/
+
+# Cache e bytecode Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Relatorios de cobertura
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Artefatos de empacotamento
+build/
+dist/
+*.egg-info/
+
+# Configuracoes locais e segredos
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Logs e arquivos do sistema operacional
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
