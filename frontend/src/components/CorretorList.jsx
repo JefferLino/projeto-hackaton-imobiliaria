@@ -1,58 +1,69 @@
-import DeleteIcon from '@mui/icons-material/Delete'
-import EditIcon from '@mui/icons-material/Edit'
-import IconButton from '@mui/material/IconButton'
-import Paper from '@mui/material/Paper'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import Tooltip from '@mui/material/Tooltip'
-import Typography from '@mui/material/Typography'
+import { Pencil, Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 export default function CorretorList({ corretores, onEdit, onDelete }) {
   if (corretores.length === 0) {
     return (
-      <Typography color="text.secondary" textAlign="center" py={4}>
+      <p className="text-center text-muted-foreground py-10">
         Nenhum corretor cadastrado.
-      </Typography>
+      </p>
     )
   }
 
   return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell><strong>Nome</strong></TableCell>
-            <TableCell><strong>Email</strong></TableCell>
-            <TableCell><strong>Telefone</strong></TableCell>
-            <TableCell align="center"><strong>Ações</strong></TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {corretores.map(c => (
-            <TableRow key={c.id} hover>
-              <TableCell>{c.nome}</TableCell>
-              <TableCell>{c.email}</TableCell>
-              <TableCell>{c.telefone}</TableCell>
-              <TableCell align="center">
-                <Tooltip title="Editar">
-                  <IconButton size="small" onClick={() => onEdit(c)}>
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Excluir">
-                  <IconButton size="small" color="error" onClick={() => onDelete(c.id)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </TableCell>
+    <TooltipProvider>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nome</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Telefone</TableHead>
+              <TableHead className="text-center">Ações</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+          </TableHeader>
+          <TableBody>
+            {corretores.map(c => (
+              <TableRow key={c.id}>
+                <TableCell>{c.nome}</TableCell>
+                <TableCell>{c.email}</TableCell>
+                <TableCell>{c.telefone}</TableCell>
+                <TableCell className="text-center">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Editar corretor"
+                        onClick={() => onEdit(c)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Editar</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Excluir corretor"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => onDelete(c.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Excluir</TooltipContent>
+                  </Tooltip>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </TooltipProvider>
   )
 }

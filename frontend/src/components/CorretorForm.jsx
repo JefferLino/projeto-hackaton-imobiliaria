@@ -1,15 +1,9 @@
-import Visibility from '@mui/icons-material/Visibility'
-import VisibilityOff from '@mui/icons-material/VisibilityOff'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
-import Stack from '@mui/material/Stack'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
+import { Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
-
-import { criarCorretor, atualizarCorretor } from '../services/corretores'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { atualizarCorretor, criarCorretor } from '../services/corretores'
 
 const DIGIT_RE = /\d/
 const EMAIL_RE = /^\S+@\S+\.\S+$/
@@ -86,41 +80,52 @@ export default function CorretorForm({ corretor, onSuccess, onCancel }) {
   }
 
   return (
-    <Box component="form" onSubmit={handleSubmit} noValidate>
-      <Typography variant="h6" mb={2}>
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
+      <h2 className="text-lg font-semibold">
         {isEdit ? 'Editar Corretor' : 'Novo Corretor'}
-      </Typography>
-      <Stack spacing={2}>
-        {erros.form && (
-          <Typography color="error" variant="body2">
-            {erros.form}
-          </Typography>
-        )}
-        <TextField
-          label="Nome"
+      </h2>
+
+      {erros.form && (
+        <p className="text-sm text-destructive">{erros.form}</p>
+      )}
+
+      <div className="space-y-1">
+        <Label htmlFor="nome">Nome</Label>
+        <Input
+          id="nome"
           name="nome"
           value={fields.nome}
           onChange={handleChange}
           onBlur={handleBlur}
-          error={Boolean(erros.nome)}
-          helperText={erros.nome}
+          aria-invalid={Boolean(erros.nome)}
           required
-          fullWidth
         />
-        <TextField
-          label="Email"
+        {erros.nome
+          ? <p className="text-sm text-destructive">{erros.nome}</p>
+          : null}
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
           name="email"
           type="email"
           value={fields.email}
           onChange={handleChange}
           onBlur={handleBlur}
-          error={Boolean(erros.email)}
-          helperText={erros.email}
+          aria-invalid={Boolean(erros.email)}
           required
-          fullWidth
         />
-        <TextField
-          label="Telefone"
+        {erros.email
+          ? <p className="text-sm text-destructive">{erros.email}</p>
+          : null}
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor="telefone">Telefone</Label>
+        <Input
+          id="telefone"
           name="telefone"
           value={fields.telefone}
           onChange={e => {
@@ -129,42 +134,53 @@ export default function CorretorForm({ corretor, onSuccess, onCancel }) {
             setErros(prev => ({ ...prev, telefone: undefined }))
           }}
           onBlur={handleBlur}
-          error={Boolean(erros.telefone)}
-          helperText={erros.telefone ?? 'Somente dígitos, 10 ou 11 caracteres'}
+          maxLength={11}
+          aria-invalid={Boolean(erros.telefone)}
           required
-          fullWidth
-          inputProps={{ maxLength: 11 }}
         />
-        <TextField
-          label={isEdit ? 'Nova senha (deixe em branco para manter)' : 'Senha'}
-          name="senha"
-          type={showSenha ? 'text' : 'password'}
-          value={fields.senha}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          error={Boolean(erros.senha)}
-          helperText={erros.senha ?? 'Mínimo 8 caracteres'}
-          required={!isEdit}
-          fullWidth
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton onClick={() => setShowSenha(v => !v)} edge="end">
-                  {showSenha ? <VisibilityOff /> : <Visibility />}
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-        />
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
-          <Button onClick={onCancel} disabled={loading}>
-            Cancelar
-          </Button>
-          <Button type="submit" variant="contained" disabled={loading}>
-            {loading ? 'Salvando…' : 'Salvar'}
-          </Button>
-        </Stack>
-      </Stack>
-    </Box>
+        {erros.telefone
+          ? <p className="text-sm text-destructive">{erros.telefone}</p>
+          : <p className="text-xs text-muted-foreground">Somente dígitos, 10 ou 11 caracteres</p>}
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor="senha">
+          {isEdit ? 'Nova senha (deixe em branco para manter)' : 'Senha'}
+        </Label>
+        <div className="relative">
+          <Input
+            id="senha"
+            name="senha"
+            type={showSenha ? 'text' : 'password'}
+            value={fields.senha}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            aria-invalid={Boolean(erros.senha)}
+            required={!isEdit}
+            className="pr-10"
+          />
+          <button
+            type="button"
+            aria-label={showSenha ? 'Ocultar senha' : 'Mostrar senha'}
+            onClick={() => setShowSenha(v => !v)}
+            className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+          >
+            {showSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        {erros.senha
+          ? <p className="text-sm text-destructive">{erros.senha}</p>
+          : <p className="text-xs text-muted-foreground">Mínimo 8 caracteres</p>}
+      </div>
+
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={loading}>
+          {loading ? 'Salvando…' : 'Salvar'}
+        </Button>
+      </div>
+    </form>
   )
 }

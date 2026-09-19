@@ -1,15 +1,8 @@
-import AddIcon from '@mui/icons-material/Add'
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
-import Container from '@mui/material/Container'
-import Divider from '@mui/material/Divider'
-import Paper from '@mui/material/Paper'
-import Snackbar from '@mui/material/Snackbar'
-import Typography from '@mui/material/Typography'
+import { Plus, Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import ConfirmDialog from '../components/ConfirmDialog'
 import CorretorForm from '../components/CorretorForm'
 import CorretorList from '../components/CorretorList'
@@ -21,14 +14,13 @@ export default function CorretoresPage() {
   const [modo, setModo] = useState('lista') // 'lista' | 'criar' | 'editar'
   const [editando, setEditando] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [toast, setToast] = useState({ open: false, msg: '', severity: 'success' })
 
   const carregar = useCallback(async () => {
     try {
       const data = await listarCorretores()
       setCorretores(data)
     } catch {
-      mostrarToast('Erro ao carregar corretores.', 'error')
+      toast.error('Erro ao carregar corretores.')
     } finally {
       setCarregando(false)
     }
@@ -37,10 +29,6 @@ export default function CorretoresPage() {
   useEffect(() => {
     carregar()
   }, [carregar])
-
-  function mostrarToast(msg, severity = 'success') {
-    setToast({ open: true, msg, severity })
-  }
 
   function handleEdit(corretor) {
     setEditando(corretor)
@@ -54,18 +42,18 @@ export default function CorretoresPage() {
   async function confirmarDelete() {
     try {
       await deletarCorretor(confirmDelete)
-      mostrarToast('Corretor removido com sucesso.')
+      toast.success('Corretor removido com sucesso.')
       setCarregando(true)
       carregar()
     } catch (err) {
-      mostrarToast(err?.detail ?? 'Erro ao remover corretor.', 'error')
+      toast.error(err?.detail ?? 'Erro ao remover corretor.')
     } finally {
       setConfirmDelete(null)
     }
   }
 
   function handleFormSuccess(msg = 'Operação realizada com sucesso.') {
-    mostrarToast(msg)
+    toast.success(msg)
     setModo('lista')
     setEditando(null)
     setCarregando(true)
@@ -78,26 +66,21 @@ export default function CorretoresPage() {
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h5" fontWeight={600}>
-          Gerenciamento de Corretores
-        </Typography>
+    <div className="w-full px-6 py-8">
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <h1 className="text-xl font-semibold min-w-0">Gerenciamento de Corretores</h1>
         {modo === 'lista' && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setModo('criar')}
-          >
+          <Button onClick={() => setModo('criar')} className="shrink-0">
+            <Plus className="h-4 w-4" />
             Novo Corretor
           </Button>
         )}
-      </Box>
+      </div>
 
-      <Divider sx={{ mb: 3 }} />
+      <Separator className="mb-6" />
 
       {modo !== 'lista' ? (
-        <Paper sx={{ p: 3 }}>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
           <CorretorForm
             corretor={modo === 'editar' ? editando : null}
             onSuccess={() =>
@@ -107,11 +90,11 @@ export default function CorretoresPage() {
             }
             onCancel={handleCancel}
           />
-        </Paper>
+        </div>
       ) : carregando ? (
-        <Box display="flex" justifyContent="center" py={6}>
-          <CircularProgress />
-        </Box>
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       ) : (
         <CorretorList
           corretores={corretores}
@@ -127,17 +110,6 @@ export default function CorretoresPage() {
         onClose={() => setConfirmDelete(null)}
         onConfirm={confirmarDelete}
       />
-
-      <Snackbar
-        open={toast.open}
-        autoHideDuration={4000}
-        onClose={() => setToast(t => ({ ...t, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity={toast.severity} variant="filled" onClose={() => setToast(t => ({ ...t, open: false }))}>
-          {toast.msg}
-        </Alert>
-      </Snackbar>
-    </Container>
+    </div>
   )
 }
