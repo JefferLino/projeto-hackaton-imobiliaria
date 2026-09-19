@@ -35,7 +35,7 @@ Para testar sem WhatsApp, inicie a API com a origem da interface autorizada:
 Se a API já estiver em execução, pare-a com Ctrl+C antes de executar esse script. Em outro terminal na raiz do projeto:
 
 ```powershell
-python -m http.server 5500 --bind 127.0.0.1 --directory interface-teste
+.\.venv\Scripts\python -m uvicorn receiver:app --app-dir interface-teste --host 127.0.0.1 --port 5500
 ```
 
 Abra http://127.0.0.1:5500. O endereço da API está em `interface-teste/config.js`. Consulte [as instruções da interface](interface-teste/README.md) para configurar outras portas ou endereços. As mensagens continuam sendo salvas no SQLite pelos endpoints da API.
@@ -102,3 +102,55 @@ Integração de saída estruturada conforme a documentação oficial: https://do
 
 
 Caminhos relativos em `DATABASE_PATH` sao resolvidos a partir da raiz do projeto principal (pasta pai de `agente`), nunca do diretorio de execucao. A pasta de destino e criada automaticamente.
+
+Apos a primeira confirmacao de cadastro, novas duvidas e correcoes recebem respostas contextuais da IA, mantendo a conversa aberta. O agente reconhece quando nao tem informacoes suficientes e nao consulta nem compartilha contatos de terceiros. O encerramento continua exigindo confirmacao explicita.
+
+
+## Lembretes para atendimentos inativos
+
+`POST /api/atendimentos/processar-inativos` aceita `{"limite":50}` (opcional; maximo 500) e usa a mesma autenticacao `X-API-Key`. O SELECT busca conversas ativas com mensagens, cuja ultima mensagem excedeu o prazo. Conversas vazias, encerradas, bloqueadas ou com resposta do agente pendente sao ignoradas.
+
+Configuracao no terminal da API, antes de iniciar:
+
+```powershell
+$env:FOLLOWUP_IDLE_HOURS = '24'
+$env:FOLLOWUP_INTERVAL_HOURS = '24'
+$env:FOLLOWUP_MAX_ATTEMPTS = '3'
+```
+
+Os prazos aceitam numeros decimais positivos (ex.: `0.01` para testes em uma base separada). O primeiro lembrete e enviado depois da inatividade configurada. Os seguintes respeitam o intervalo. Apos o terceiro envio aceito, o sistema aguarda mais um intervalo; sem resposta, encerra com `Conversas.Status=encerrada` e `MotivoEncerramento=cancelado_por_inatividade`. O resultado do processamento informa `status=cancelada`. Esse motivo distingue cancelamento de encerramento solicitado pelo cliente, preservando compatibilidade com o CHECK do banco existente. Qualquer nova mensagem do cliente reinicia o ciclo. Uma conversa cancelada nao e selecionada novamente.
+
+`Lembretes` persiste payload, tentativa, erro, identificador de entrega e data de envio. So HTTP 2xx conta como envio aceito; erros nao consomem as tres tentativas. Ha intervalo minimo de 60 segundos para repetir falhas. O mesmo evento e reutilizado apos falha, com `Idempotency-Key`; isso nao altera o contrato de entrada do WhatsApp. Se a API receptora aceitar a mensagem mas a conexao cair, ela deve deduplicar esse evento para evitar entregas repetidas. A resposta do cliente reinicia a contagem pelo ID interno da ultima mensagem recebida, sem memoria de sessao.
+
+`followups.py` orquestra o envio e `reminder_store.py` centraliza o SQL e as reservas transacionais dos lembretes. Inclua ambos na entrega junto de `app.py`, `database.py` e `llm.py`. A rede opera fora da transacao; chamadas concorrentes nao reservam a mesma conversa enquanto houver bloqueio valido.
+
+### Receptor local e monitor
+
+O destino e configurado em `config.py`, na constante `FOLLOWUP_URL`. O valor padrao e: `http://127.0.0.1:5500/api/lembretes`, sem proxy ou redirecionamentos. O transporte para uma API externa real ainda depende da confirmacao do destino e do payload autorizado. Nenhuma mensagem e enviada diretamente ao WhatsApp pelo receptor de testes.
+
+Inicie o receptor em outro terminal (na pasta `agente`):
+
+```powershell
+.\.venv\Scripts\python -m uvicorn receiver:app --app-dir interface-teste --host 127.0.0.1 --port 5500
+```
+
+Esse comando substitui `python -m http.server`; pare o servidor antigo se estiver usando a porta 5500. O receptor tambem serve o chat em `/`. Abra http://127.0.0.1:5500/lembretes para ver os recebimentos e clicar em **Processar atendimentos inativos**. O log e consultado a cada dois segundos e persiste em `interface-teste/recebimentos.sqlite3`, fora do banco comercial. Eventos repetidos aparecem apenas uma vez.
+
+Payload enviado ao receptor:
+
+```json
+{
+  "evento_id": "identificador-da-entrega",
+  "conversa_id": 15,
+  "telefone": "5511999999999",
+  "tentativa": 1,
+  "tipo": "retomada_atendimento",
+  "mensagem": "Seu atendimento anterior esta em aberto. Resumo: ... Deseja continuar o atendimento anterior ou iniciar um novo?"
+}
+```
+
+O resumo usa somente as preferencias da propria conversa. Se ainda nao houver preferencias, utiliza a ultima solicitacao do cliente. O lembrete aceito e salvo em Mensagens como bot e ativa a escolha de retomada existente.
+
+A verificacao roda quando o endpoint e chamado. Para execucao periodica sem clicar na tela, configure um agendador externo (por exemplo, Agendador de Tarefas do Windows) para fazer POST nesse endpoint a cada 15 minutos. Nao ha tarefa de fundo implicita. O retorno inclui `enviados`, `cancelados`, `falhas` e os resultados por conversa.
+
+Para alterar a API receptora de lembretes, edite `FOLLOWUP_URL` em `config.py` e reinicie a API do agente. Inclua `config.py` na entrega. O padrao continua sendo `http://127.0.0.1:5500/api/lembretes`.

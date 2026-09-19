@@ -5,6 +5,8 @@ from typing import Literal
 from contextlib import asynccontextmanager
 
 import database
+import followups
+import reminder_store
 import llm
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +20,7 @@ CONTACT_REQUIRED = ['nome_contato', 'telefone_contato']
 @asynccontextmanager
 async def lifespan(app):
     database.init_db()
+    reminder_store.init_db()
     yield
 
 
@@ -123,8 +126,63 @@ def respond(body: AgentRequest):
             size += len(record['Texto'])
         messages = [{'role': 'user' if m['ResponsavelEnvio'] == 'cliente' else 'assistant', 'content': m['Texto']} for m in reversed(selected)]
         current = json.loads(row['Dados'])
+        previous_reply = next((m['content'] for m in reversed(messages[:-1]) if m['role'] == 'assistant'), None)
+        resume_text = messages[-1]['content'].strip().lower().strip('.!?, ')
+        if previous_reply == llm.FALLBACK_REPLY and resume_text in {
+            'sim', 's', 'claro', 'ok', 'vamos', 'continuar', 'prosseguir', 'pode continuar',
+            'quero continuar', 'quero prosseguir', 'sim quero continuar', 'sim, quero continuar',
+            'sim quero prosseguir', 'sim, quero prosseguir', 'sim, por favor', 'sim por favor',
+        }:
+            pending_fields = [key for key in REQUIRED + CONTACT_REQUIRED if not current.get(key)]
+            labels = {'estado': 'o estado de interesse', 'bairro': 'o bairro de interesse',
+                      'tipo_negocio': 'se deseja comprar ou alugar', 'tipo_imovel': 'se procura casa, apartamento ou comercial',
+                      'urgencia': 'a urgência (baixa, média ou alta)', 'nome_contato': 'seu nome',
+                      'telefone_contato': 'seu telefone para contato com DDD'}
+            property_missing = [key for key in REQUIRED if not current.get(key)]
+            contact_missing = [key for key in CONTACT_REQUIRED if not current.get(key)]
+            offered = bool(row['OpcionaisOferecidos'])
+            if property_missing:
+                reply = 'Claro, vamos continuar! Para seguir, me informe ' + ' e '.join(labels[key] for key in property_missing[:2]) + '.'
+            elif not offered:
+                reply = 'Claro, vamos continuar! Deseja informar metragem, quartos, banheiros, vagas ou valor máximo? Esses detalhes são opcionais; pode pular.'
+                offered = True
+            elif contact_missing:
+                reply = 'Claro, vamos continuar! Antes de encaminhar ao consultor, preciso de ' + ' e '.join(labels[key] for key in contact_missing) + '.'
+            else:
+                reply = 'Claro! Seus dados já estão completos. Você gostaria de alterar alguma informação ou encerrar o atendimento para aguardar o contato do consultor?'
+            result = {'conversa_id': body.conversa_id, 'mensagem_id': body.mensagem_id,
+                      'resposta': reply, 'status': 'ativa', 'dados': current,
+                      'aguardando_confirmacao': bool(row['AguardandoConfirmacao']),
+                      'aguardando_retomada': False, 'campos_obrigatorios_pendentes': pending_fields}
+            database.finish_response(body.conversa_id, body.telefone, body.mensagem_id,
+                                     token, current, False, offered, result)
+            return result
+        if llm.requests_other_records(messages[-1]['content']):
+            result = {
+                'conversa_id': body.conversa_id, 'mensagem_id': body.mensagem_id,
+                'resposta': llm.PRIVATE_DATA_REPLY, 'status': 'ativa',
+                'aguardando_confirmacao': bool(row['AguardandoConfirmacao']),
+                'dados': current, 'aguardando_retomada': False,
+                'campos_obrigatorios_pendentes': [key for key in REQUIRED + CONTACT_REQUIRED if not current.get(key)],
+            }
+            database.finish_response(body.conversa_id, body.telefone, body.mensagem_id,
+                                     token, current, False, bool(row['OpcionaisOferecidos']), result)
+            return result
         extracted = llm.extract_preferences(current, messages)
-        current.update(extracted.dados.model_dump(exclude_none=True))
+        if extracted.nao_pode_responder:
+            result = {
+                'conversa_id': body.conversa_id, 'mensagem_id': body.mensagem_id,
+                'resposta': llm.FALLBACK_REPLY, 'status': 'ativa',
+                'aguardando_confirmacao': bool(row['AguardandoConfirmacao']),
+                'dados': current, 'aguardando_retomada': False,
+                'campos_obrigatorios_pendentes': [key for key in REQUIRED + CONTACT_REQUIRED if not current.get(key)],
+            }
+            database.finish_response(body.conversa_id, body.telefone, body.mensagem_id,
+                                     token, current, False, bool(row['OpcionaisOferecidos']), result)
+            return result
+        updates = extracted.dados.model_dump(exclude_none=True)
+        changed = {key: value for key, value in updates.items() if current.get(key) != value}
+        current.update(updates)
         missing = [key for key in REQUIRED if not current.get(key)]
         contact_missing = [key for key in CONTACT_REQUIRED if not current.get(key)]
         optional = [key for key in llm.Preferences.model_fields if key not in REQUIRED + CONTACT_REQUIRED and current.get(key) is None]
@@ -141,6 +199,17 @@ def respond(body: AgentRequest):
             # Esta etapa precisa corresponder exatamente ao estado persistido, sem depender da redação da IA.
             reply = ('Conversa encerrada. Um consultor irá entrar em contato em breve. Obrigado!' if closing else
                      'Suas preferências foram salvas. Um consultor irá entrar em contato. Deseja encerrar a conversa ou alterar algo?')
+        if complete and row['AguardandoConfirmacao'] and not closing:
+            instruction = (
+                'O cadastro ja esta completo e a conversa permanece aberta. Responda primeiro a ultima mensagem do cliente. '
+                'Se houve correcao, confirme apenas os campos alterados, sem repetir o cadastro inteiro. '
+                'Se for uma pergunta, responda com base apenas nos dados deste atendimento. '
+                'Se nao souber, diga isso com naturalidade e ofereca ajuda com o proprio atendimento. '
+                'Nao repita automaticamente a frase Suas preferencias foram salvas nem a pergunta de encerramento. '
+                'Nao diga que a conversa foi encerrada. Campos alterados neste turno: '
+                + json.dumps(changed, ensure_ascii=False)
+            )
+            reply = llm.generate_reply(current, instruction, messages)
         result = {'conversa_id': body.conversa_id, 'mensagem_id': body.mensagem_id, 'resposta': reply,
                   'status': 'encerrada' if closing else 'ativa', 'aguardando_confirmacao': complete and not closing,
                   'dados': current, 'campos_obrigatorios_pendentes': missing + contact_missing, 'aguardando_retomada':False}
@@ -149,3 +218,12 @@ def respond(body: AgentRequest):
         return result
     finally:
         database.release_response(body.conversa_id, token)
+
+
+class FollowupRequest(BaseModel):
+    limite: int = Field(default=50, ge=1, le=500)
+
+
+@app.post('/api/atendimentos/processar-inativos', dependencies=[Depends(auth)])
+def process_inactive(body: FollowupRequest = FollowupRequest()):
+    return followups.process(body.limite)

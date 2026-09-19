@@ -13,7 +13,7 @@ Na raiz do projeto, inicie a API em um terminal, liberando a origem da interface
 Em outro terminal, também na raiz:
 
 ```powershell
-python -m http.server 5500 --bind 127.0.0.1 --directory interface-teste
+.\.venv\Scripts\python -m uvicorn receiver:app --app-dir interface-teste --host 127.0.0.1 --port 5500
 ```
 
 Abra http://127.0.0.1:5500. Se já estiver dentro desta pasta, omita `--directory interface-teste`.
@@ -27,3 +27,7 @@ Se a API exigir `API_KEY`, preencha o campo de chave na página. A interface env
 ## Entrega
 
 Esta pasta inteira é opcional e deve ficar fora do pacote de produção. A API não importa nem serve seus arquivos. A integração do WhatsApp não precisa de CORS; deixe `CORS_ORIGINS` sem configuração quando não houver cliente de navegador.
+
+## Monitor de lembretes
+
+Abra http://127.0.0.1:5500/lembretes. O servidor recebe POST em `/api/lembretes`, persiste e deduplica pelo evento_id; a tela mostra os ultimos 100 eventos. O botao de processamento chama a API do agente, usando a chave preenchida. O receptor deve substituir o servidor estatico na porta 5500. Os registros ficam em `recebimentos.sqlite3`. A execucao periodica do processamento depende de um agendador externo.

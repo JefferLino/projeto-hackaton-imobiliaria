@@ -97,7 +97,7 @@ def history(cid, phone):
         row = conversation(con, cid, phone)
         messages = con.execute('SELECT ID,Texto,Horario,ResponsavelEnvio FROM Mensagens WHERE ConversaID=? ORDER BY ID', (cid,)).fetchall()
         pending = con.execute("SELECT ID FROM Mensagens m WHERE ConversaID=? AND ResponsavelEnvio='cliente' AND NOT EXISTS (SELECT 1 FROM Mensagens r WHERE r.EmRespostaA=m.ID) ORDER BY ID LIMIT 1", (cid,)).fetchone()
-    return {'conversa_id': cid, 'status': row['Status'], 'dados': json.loads(row['Dados']), 'mensagens': [dict(m) for m in messages], 'mensagem_pendente_id': pending['ID'] if pending else None}
+    return {'conversa_id': cid, 'status': row['Status'], 'motivo_encerramento': row['MotivoEncerramento'] if 'MotivoEncerramento' in row.keys() else None, 'dados': json.loads(row['Dados']), 'mensagens': [dict(m) for m in messages], 'mensagem_pendente_id': pending['ID'] if pending else None}
 
 
 def save_message(cid, phone, text):
