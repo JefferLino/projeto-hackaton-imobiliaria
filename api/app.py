@@ -7,12 +7,15 @@ import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, Response
+import jwt
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
 import database
 from services import corretores as svc
+
+_jwt_secret = os.getenv('JWT_SECRET', 'dev-secret-imobiliaria-2026')
 
 
 @asynccontextmanager
@@ -167,3 +170,40 @@ def deletar_corretor(corretor_id: int):
     with database.db() as con:
         svc.delete_corretor(con, corretor_id)
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    email: str
+    senha: str
+
+
+class CorretorAuth(BaseModel):
+    id: int
+    nome: str
+    email: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    corretor: CorretorAuth
+
+
+@app.post('/api/auth/login', response_model=LoginResponse)
+def login(body: LoginRequest):
+    with database.db() as con:
+        row = con.execute(
+            'SELECT id, nome, email, senha_hash FROM Corretores WHERE email = ?',
+            (body.email,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=401, detail='Usuário não encontrado')
+    import bcrypt as _bcrypt
+    if not _bcrypt.checkpw(body.senha.encode(), row['senha_hash'].encode()):
+        raise HTTPException(status_code=401, detail='Senha inválida')
+    payload = {'sub': row['id'], 'nome': row['nome'], 'email': row['email']}
+    token = jwt.encode(payload, _jwt_secret, algorithm='HS256')
+    return {'token': token, 'corretor': {'id': row['id'], 'nome': row['nome'], 'email': row['email']}}

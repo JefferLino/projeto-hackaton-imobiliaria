@@ -3,3 +3,21 @@
 /doc-specs/spec.md
 /doc-specs/tarefa.md
 /doc-specs/tarefa.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Ambiente
+.env
+.env.*
