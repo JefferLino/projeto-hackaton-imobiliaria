@@ -17,7 +17,8 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<CorretoresPage />} />
+            <Route path="/" />
+            <Route path="/corretores" element={<CorretoresPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
           </Route>
         </Route>

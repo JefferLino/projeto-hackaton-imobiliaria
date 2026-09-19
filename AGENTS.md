@@ -1,236 +1,239 @@
-# AGENTS.md — Guia de contexto para agentes de IA
+# AGENTS.md — Guia de Contexto para Agentes
 
-Este arquivo descreve o projeto para que agentes (Claude Code, Copilot, etc.) possam trabalhar com contexto suficiente sem precisar redescobrir a estrutura a cada sessão.
-
----
-
-## Resumo do projeto
-
-POC de um agente SDR (Sales Development Representative) para imobiliárias, desenvolvida para o **Tech Challenge Fase 5 da POSTECH/FIAP**. A solução usa IA generativa local para atender leads via chat, qualificá-los e gerar um resumo estruturado para o corretor humano. O frontend expõe a interface de gestão (CRUD de Corretores, dashboard, histórico de leads).
-
-**Tarefa ativa:** Tela de Login (`doc-specs/tarefa.md` + `doc-specs/PRD.md`) — implementar autenticação por e-mail e senha no frontend, criar o endpoint `POST /api/auth/login` na API de Corretores e proteger todas as rotas com `ProtectedRoute`.
+Leia este arquivo antes de qualquer tarefa neste repositório.  
+Ele descreve o projeto, a stack, a estrutura de pastas, padrões obrigatórios e o que não fazer.
 
 ---
 
-## Stack tecnológica
+## 1. Resumo do Projeto
 
-### API de Corretores (`api/`)
-| Componente | Versão/detalhe |
-|------------|---------------|
-| Runtime | Python 3.12+ |
-| Framework | FastAPI ≥ 0.115 |
-| Servidor ASGI | Uvicorn (porta **8001**) |
-| Banco de dados | SQLite compartilhado em `database/imobiliaria.sqlite3` |
-| Hash de senha | bcrypt (`bcrypt` lib) |
-| Validação | Pydantic v2 |
-| Testes | pytest + FastAPI TestClient |
+POC de **agente SDR imobiliário** para o Tech Challenge Fase 5 da POSTECH/FIAP.
 
-### Agente SDR (`agente/`)
-| Componente | Versão/detalhe |
-|------------|---------------|
-| Runtime | Python 3.12+ |
-| Framework | FastAPI ≥ 0.115 |
-| Servidor ASGI | Uvicorn (porta **8000**) |
-| Banco de dados | SQLite compartilhado em `database/imobiliaria.sqlite3` |
-| LLM | Ollama local, modelo padrão `qwen3:4b` (env `OLLAMA_MODEL`) |
-| Validação | Pydantic v2 |
-| HTTP client | httpx |
-| Testes | pytest + FastAPI TestClient |
+O sistema atende leads automaticamente via conversação em linguagem natural, qualifica suas intenções (compra, aluguel, investimento), sugere imóveis de uma base simulada e gera resumos para o corretor assumir o atendimento. Corretores gerenciam sua conta via CRUD no frontend.
+
+**Três módulos independentes:**
+
+| Módulo | Descrição | Porta |
+|--------|-----------|-------|
+| `agente/` | Agente conversacional SDR — FastAPI + Ollama | 8000 |
+| `api/` | CRUD de Corretores + Auth JWT — FastAPI | 8001 |
+| `frontend/` | Interface web — React + Vite | 5173 |
+
+Os módulos **não se importam mutuamente**. Compartilham apenas o banco SQLite em `database/imobiliaria.sqlite3`.
+
+---
+
+## 2. Stack Tecnológica
 
 ### Frontend (`frontend/`)
-| Componente | Versão/detalhe |
-|------------|---------------|
-| Runtime | Node 20+ |
-| Framework | React 19 |
-| Build tool | Vite 8 |
-| Roteamento | React Router v7 |
-| UI | **shadcn/ui** + Tailwind CSS v3 + Radix UI primitives |
-| Notificações | sonner (toast) |
-| Ícones | lucide-react |
-| Linter | oxlint |
-| Linguagem | JavaScript (JSX) — sem TypeScript |
-| Proxy dev | `/api` → `http://localhost:8001` (vite.config.js) |
 
-### Infraestrutura
-- Banco compartilhado: `database/imobiliaria.sqlite3` (fora de `agente/` e `api/`).
-- Cada módulo inicializa seu próprio schema via `database.init_db()` — idempotente.
-- CORS da `api/` habilitado para `http://localhost:5173` por padrão; configurável via `CORS_ORIGINS`.
-- CORS do `agente/` desabilitado por padrão (habilitado apenas via `CORS_ORIGINS` env).
+| Tecnologia | Versão | Papel |
+|------------|--------|-------|
+| React | 19 | UI |
+| Vite | 8 | Build / dev server |
+| React Router | v7 | Roteamento SPA |
+| shadcn/ui | latest | Componentes de UI (obrigatório) |
+| Tailwind CSS | v3 | Estilização utilitária |
+| lucide-react | latest | Ícones |
+| sonner | latest | Toasts/notificações |
+| oxlint | latest | Linting |
+
+- **Sem TypeScript** — arquivos `.jsx` e `.js`.
+- **Sem Redux ou Zustand** — estado local com `useState`/`useCallback`.
+- **Sem MUI, Ant Design ou outras bibliotecas de UI** além de shadcn/ui.
+
+### API de Corretores (`api/`)
+
+| Tecnologia | Papel |
+|------------|-------|
+| FastAPI | Framework HTTP |
+| SQLite | Banco de dados (WAL mode) |
+| Pydantic v2 | Validação e serialização |
+| bcrypt | Hash de senha |
+| PyJWT | Geração de JWT |
+
+### Agente SDR (`agente/`)
+
+| Tecnologia | Papel |
+|------------|-------|
+| FastAPI | Framework HTTP |
+| SQLite | Banco de dados (compartilhado) |
+| Pydantic v2 | Validação |
+| Ollama (`qwen3:4b`) | LLM local para conversação |
+| httpx | Chamadas HTTP para o Ollama |
 
 ---
 
-## Estrutura de pastas
+## 3. Estrutura de Pastas
 
 ```
 projeto-hackaton-imobiliaria/
-│
-├── api/                            # API REST de Corretores (FastAPI, porta 8001)
-│   ├── app.py                      # Entrypoint FastAPI, rotas CRUD + auth
-│   ├── database.py                 # Conexão SQLite e init_db (tabela Corretores)
-│   ├── services/
-│   │   └── corretores.py           # Lógica de negócio: list, create, get, update, delete
-│   └── tests/
-│       └── test_corretores.py      # Suite pytest
-│
-├── agente/                         # Agente conversacional SDR (FastAPI, porta 8000)
-│   ├── app.py                      # Entrypoint FastAPI, rotas de conversa e agente
-│   ├── llm.py                      # Chamadas ao Ollama, prompts, modelos Pydantic
-│   ├── database.py                 # Acesso SQLite, init_db, queries de conversa
+├── agente/                     # Agente SDR (porta 8000)
+│   ├── app.py                  # Endpoints FastAPI
+│   ├── database.py             # Esquema e conexão SQLite
+│   ├── llm.py                  # Integração Ollama
+│   ├── smoke_ollama.py         # Script de sanidade do Ollama
 │   ├── requirements.txt
-│   ├── smoke_ollama.py             # Script de smoke test do LLM
-│   ├── interface-teste/            # HTML estático de teste manual da API do agente
+│   ├── interface-teste/        # HTML estático para teste manual do agente
 │   └── tests/
-│       └── test_api.py             # Suite pytest de integração
+│       └── test_api.py
 │
-├── frontend/                       # SPA React + Vite
-│   ├── src/
-│   │   ├── App.jsx                 # BrowserRouter, rotas principais
-│   │   ├── main.jsx                # Ponto de entrada React
-│   │   ├── pages/
-│   │   │   └── CorretoresPage.jsx  # Página de CRUD de corretores
-│   │   ├── components/
-│   │   │   ├── ui/                 # Componentes shadcn/ui (button, input, dialog, table…)
-│   │   │   ├── CorretorForm.jsx    # Formulário criar/editar corretor
-│   │   │   ├── CorretorList.jsx    # Tabela de listagem de corretores
-│   │   │   └── ConfirmDialog.jsx   # Diálogo de confirmação de exclusão
-│   │   ├── services/
-│   │   │   └── corretores.js       # Funções fetch para /api/corretores
-│   │   └── lib/
-│   │       └── utils.js            # cn() (clsx + tailwind-merge)
-│   ├── vite.config.js              # Proxy /api → localhost:8001
-│   ├── package.json
-│   └── index.html
+├── api/                        # API de Corretores (porta 8001)
+│   ├── app.py                  # Endpoints FastAPI + Auth JWT
+│   ├── database.py             # Esquema e conexão SQLite (tabela Corretores)
+│   ├── services/
+│   │   └── corretores.py       # Lógica de negócio (CRUD)
+│   └── tests/
+│       └── test_corretores.py
 │
 ├── database/
-│   └── imobiliaria.sqlite3         # Arquivo SQLite compartilhado (ignorado pelo git)
+│   └── imobiliaria.sqlite3     # Banco compartilhado entre api/ e agente/
+│
+├── frontend/                   # SPA React (porta 5173)
+│   ├── index.html
+│   ├── vite.config.js          # Proxy /api → localhost:8001
+│   ├── src/
+│   │   ├── main.jsx            # Ponto de entrada
+│   │   ├── App.jsx             # Router raiz
+│   │   ├── index.css           # CSS global + variáveis Tailwind/shadcn
+│   │   ├── components/
+│   │   │   ├── ui/             # Componentes shadcn/ui (Button, Input, etc.)
+│   │   │   ├── AppLayout.jsx   # Shell: header + Outlet
+│   │   │   ├── ProtectedRoute.jsx
+│   │   │   ├── CorretorForm.jsx
+│   │   │   ├── CorretorList.jsx
+│   │   │   └── ConfirmDialog.jsx
+│   │   ├── pages/
+│   │   │   ├── LoginPage.jsx
+│   │   │   └── CorretoresPage.jsx
+│   │   └── services/
+│   │       ├── auth.js         # login() / logout()
+│   │       └── corretores.js   # listarCorretores, criarCorretor, etc.
+│   └── node_modules/
 │
 ├── doc-specs/
-│   ├── PRD.md                      # Product Requirements Document (feature atual)
-│   ├── tarefa.md                   # História de usuário em andamento
-│   └── tarefa.txt                  # Cópia da história (referência)
+│   ├── PRD.md                  # Documento de requisitos da feature atual
+│   └── tarefa.md               # História de usuário original
 │
-├── README.md
-└── AGENTS.md                       # Este arquivo
+├── AGENTS.md                   # Este arquivo
+└── README.md                   # Visão geral do projeto
 ```
 
 ---
 
-## Padrões e convenções
+## 4. Endpoints da API
 
-### Geral
-- Linguagem do projeto: **português** (variáveis, comentários, mensagens de UI, commits).
-- Commits em português, mensagem imperativa no presente.
-- Sem arquivos `.env` commitados; variáveis de ambiente documentadas no README.
+### `api/` — CRUD de Corretores (porta 8001, prefixo `/api`)
 
-### Backend (ambos os módulos)
-- Responsabilidade única por arquivo: `app.py` (HTTP), `llm.py` (IA), `database.py` (persistência), `services/` (lógica de negócio).
-- Erros de banco são encapsulados e mapeados para respostas HTTP; nunca vaze stack trace para o cliente.
-- `database.py` nunca importa FastAPI. `services/` nunca importa `database.py` diretamente — recebe conexões abertas pelo `app.py`.
-- Respostas do agente são **idempotentes** por `mensagem_id`.
-- **Nunca** acessar `agente/database.py` de `llm.py`; o módulo LLM recebe dados como parâmetros.
+| Método | Path | Descrição |
+|--------|------|-----------|
+| `GET` | `/api/corretores` | Lista todos os corretores |
+| `POST` | `/api/corretores` | Cria novo corretor |
+| `GET` | `/api/corretores/{id}` | Busca corretor por ID |
+| `PUT` | `/api/corretores/{id}` | Atualiza corretor |
+| `DELETE` | `/api/corretores/{id}` | Remove corretor |
+| `POST` | `/api/auth/login` | Autentica corretor → retorna `{ token, corretor }` |
+
+**Auth:** JWT em `localStorage` (`auth_token`). O frontend usa proxy Vite (`/api` → `http://localhost:8001`); a API não exige o token nos endpoints de corretores (autenticação é tratada no frontend via `ProtectedRoute`).
+
+### `agente/` — Agente SDR (porta 8000, prefixo `/api`)
+
+| Método | Path | Descrição |
+|--------|------|-----------|
+| `POST` | `/api/whatsapp/mensagens` | Recebe mensagem e retorna resposta do agente |
+| `POST` | `/api/conversas` | Cria nova conversa |
+| `GET` | `/api/conversas/{cid}` | Histórico de uma conversa |
+| `POST` | `/api/conversas/{cid}/mensagens` | Salva mensagem manual |
+| `POST` | `/api/agente/responder` | Gera resposta do agente para uma mensagem |
+
+**Auth:** Header `X-API-Key` (variável de ambiente `API_KEY`; opcional em dev).
+
+---
+
+## 5. Padrões e Convenções
 
 ### Frontend
-- Componentes de UI de biblioteca ficam em `src/components/ui/` (padrão shadcn/ui).
-- Componentes de domínio ficam em `src/components/`.
-- Páginas ficam em `src/pages/`.
-- Serviços HTTP (fetch) ficam em `src/services/`.
-- Estado gerenciado localmente com `useState`/`useCallback`; sem Redux ou Zustand.
-- Validação de formulário feita no próprio componente; sem `react-hook-form` por ora.
-- Toda nova tela **deve** usar componentes shadcn/ui. MUI **não deve** ser adicionado.
-- Aliases: `@/` mapeia para `src/` (configurado no `vite.config.js`).
 
-### Banco de dados
-- `database/imobiliaria.sqlite3` é o único banco do projeto; todos os módulos apontam para ele.
-- Migrações via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` para preservar dados existentes.
-- A tabela `Corretores` (módulo `api/`) armazena os usuários gestores com `senha_hash` bcrypt.
-- A tabela `Usuarios` (módulo `agente/`) armazena leads (telefone + nome); sem senha.
+- **Componentes shadcn/ui** vão em `src/components/ui/`. Nunca editar os arquivos gerados pelo shadcn diretamente — regenerar se necessário.
+- **Componentes de domínio** (layout, páginas, formulários) vão em `src/components/` ou `src/pages/`.
+- **Serviços HTTP** vão em `src/services/` — um arquivo por recurso.
+- **Estado:** `useState` + `useCallback` apenas. Sem Context API para dados globais simples (usar `localStorage` para auth).
+- **Estilização:** classes Tailwind inline; evitar CSS Modules ou `styled-components`.
+- **Toasts:** sempre via `sonner` (`toast.success`, `toast.error`).
+- **Ícones:** sempre via `lucide-react`.
+- **Arquivos:** `.jsx` para componentes React, `.js` para utilitários e serviços.
 
----
+### API (`api/` e `agente/`)
 
-## Endpoints da API — referência rápida
+- **Separação de camadas:** `app.py` só faz HTTP (validação Pydantic, roteamento, erros); `services/*.py` contém lógica de negócio; `database.py` gerencia esquema e conexão.
+- **SQLite:** WAL mode, `PRAGMA foreign_keys=ON`, timeout 15 s.
+- **Senhas:** bcrypt com `rounds=12`; nunca retornar `senha_hash` nas respostas.
+- **JWT:** `PyJWT`; segredo via variável de ambiente `JWT_SECRET` (default: `dev-secret-imobiliaria-2026`).
+- **CORS:** configurado via variável `CORS_ORIGINS`; default em `api/` é `http://localhost:5173`.
 
-### API de Corretores (`api/`, porta 8001)
+### Git
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET    | `/api/corretores` | Lista todos os corretores |
-| POST   | `/api/corretores` | Cria corretor (nome, email, telefone, senha) |
-| GET    | `/api/corretores/:id` | Busca corretor por ID |
-| PUT    | `/api/corretores/:id` | Atualiza corretor (campos opcionais) |
-| DELETE | `/api/corretores/:id` | Remove corretor (204 No Content) |
-| POST   | `/api/auth/login` | **A implementar** — autentica por e-mail + senha |
-
-### Agente SDR (`agente/`, porta 8000)
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| POST   | `/api/whatsapp/mensagens` | Recebe mensagem de lead (WhatsApp) |
-| POST   | `/api/conversas` | Cria conversa para um telefone |
-| GET    | `/api/conversas/:cid` | Retorna histórico da conversa |
-| POST   | `/api/conversas/:cid/mensagens` | Adiciona mensagem a uma conversa |
-| POST   | `/api/agente/responder` | Aciona o agente LLM para responder |
+- Commits em português, imperativo, sem emoji.
+- Mensagem de commit termina com `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>` quando gerada por IA.
 
 ---
 
-## Limitações dos agentes (do's e don'ts)
+## 6. Variáveis de Ambiente
 
-### Pode fazer ✅
-- Ler qualquer arquivo do repositório para entender o contexto.
-- Adicionar componentes shadcn/ui via `npx shadcn@latest add <componente>` dentro de `frontend/`.
-- Criar novos arquivos em `src/components/`, `src/pages/`, `src/services/` seguindo a estrutura existente.
-- Alterar `api/app.py`, `api/database.py` e `api/services/corretores.py` para adicionar endpoints, desde que os testes existentes continuem passando.
-- Alterar `agente/app.py`, `agente/database.py` e `agente/llm.py` para adicionar endpoints ou corrigir bugs, desde que os testes existentes continuem passando.
-- Rodar `pytest` dentro de `api/` ou `agente/` para validar alterações no backend.
-- Rodar `npm run dev` ou `npm run build` dentro de `frontend/` para validar o frontend.
-- Atualizar `AGENTS.md` e `doc-specs/PRD.md` quando o estado do projeto mudar significativamente.
-
-### Não pode fazer ❌
-- **Não alterar** as regras de validação dos formulários (Nome, Email, Telefone, Senha) sem atualizar o PRD e obter aprovação.
-- **Não adicionar** novos modelos de IA, endpoints externos ou dependências pagas — o projeto deve rodar 100% local.
-- **Não commitar** `database/imobiliaria.sqlite3` com dados reais — o `.gitignore` já o exclui, não reverter isso.
-- **Não modificar** arquivos de teste (`test_*.py`) para fazer testes passarem — corrija o código de produção.
-- **Não usar** `git push --force` nem `git reset --hard` sem confirmação explícita do usuário.
-- **Não criar** arquivos de documentação extras (`.md`) além dos já definidos em `doc-specs/` e na raiz, a menos que o usuário solicite.
-- **Não enviar** dados do banco ou credenciais para serviços externos.
-- **Não adicionar** MUI (`@mui/material`) ou qualquer outra biblioteca de UI em novas telas — shadcn/ui é o padrão obrigatório.
-- **Não misturar** responsabilidades entre `agente/` e `api/` — são módulos independentes que apenas compartilham o arquivo SQLite.
+| Variável | Módulo | Default | Descrição |
+|----------|--------|---------|-----------|
+| `DATABASE_PATH` | `api/`, `agente/` | `database/imobiliaria.sqlite3` | Caminho absoluto ou relativo ao SQLite |
+| `JWT_SECRET` | `api/` | `dev-secret-imobiliaria-2026` | Segredo para assinar JWT |
+| `CORS_ORIGINS` | `api/`, `agente/` | `http://localhost:5173` | Origens permitidas pelo CORS |
+| `API_KEY` | `agente/` | _(vazio = sem auth)_ | Chave de API para o agente |
 
 ---
 
-## Como executar localmente
+## 7. Como Executar Localmente
 
-### API de Corretores (porta 8001)
-```powershell
+```bash
+# 1. Banco de dados — criado automaticamente ao iniciar qualquer serviço
+
+# 2. API de Corretores
 cd api
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m uvicorn app:app --host 127.0.0.1 --port 8001 --reload
-```
+python -m uvicorn app:app --port 8001 --reload
 
-### Agente SDR (porta 8000)
-```powershell
+# 3. Agente SDR (requer Ollama com modelo qwen3:4b)
 cd agente
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-ollama pull qwen3:4b
-# Se o Ollama não estiver em execução: ollama serve (em outro terminal)
-.\.venv\Scripts\python -m uvicorn app:app --host 127.0.0.1 --port 8000 --reload
-```
+python -m uvicorn app:app --port 8000 --reload
 
-### Frontend
-```powershell
+# 4. Frontend
 cd frontend
 npm install
 npm run dev
-# Disponível em http://localhost:5173
-# O Vite proxeia /api para http://localhost:8001 (API de Corretores)
 ```
 
-### Testes
-```powershell
-# API de Corretores
-cd api; .\.venv\Scripts\python -m pytest -q
+---
 
-# Agente SDR
-cd agente; .\.venv\Scripts\python -m pytest -q
-```
+## 8. Limitações dos Agentes (Do's e Don'ts)
+
+### DO — Pode e deve fazer
+
+- Editar arquivos em `frontend/src/` para adicionar componentes, páginas e serviços.
+- Criar novos componentes dentro de `src/components/` ou `src/pages/`.
+- Usar componentes shadcn/ui existentes em `src/components/ui/`.
+- Editar `api/app.py` e `api/services/corretores.py` para novos endpoints.
+- Usar `lucide-react` para ícones e `sonner` para toasts.
+- Usar Tailwind CSS para estilos inline nos componentes.
+- Ler `doc-specs/PRD.md` para entender o escopo da feature em desenvolvimento.
+- Rodar `npm run lint` no frontend antes de reportar conclusão.
+
+### DON'T — Não fazer
+
+- **Não instalar bibliotecas de UI além de shadcn/ui** (sem MUI, Ant Design, Chakra, etc.).
+- **Não usar TypeScript** — o projeto é JavaScript puro (`.jsx`/`.js`).
+- **Não adicionar Redux, Zustand ou Context API** para estado que cabe em `useState`.
+- **Não editar arquivos em `frontend/node_modules/`**.
+- **Não modificar o banco SQLite diretamente** — usar as funções em `database.py`.
+- **Não criar endpoints novos em `agente/app.py`** sem confirmar com o usuário — o agente usa chave de API e tem escopo definido.
+- **Não mover o arquivo `database/imobiliaria.sqlite3`** — o caminho é compartilhado entre `api/` e `agente/`.
+- **Não retornar `senha_hash`** em nenhuma resposta de API.
+- **Não usar `--no-verify`** em commits nem ignorar falhas de lint.
+- **Não criar arquivos de comentário, planejamento ou rascunho no repositório** — usar apenas o contexto da conversa para planejamento.
+- **Não assumir que rotas protegidas funcionam sem `ProtectedRoute`** — toda rota que exige login deve ser filha do componente `ProtectedRoute`.
+- **Não adicionar CSS Modules ou `styled-components`** — usar apenas classes Tailwind.
