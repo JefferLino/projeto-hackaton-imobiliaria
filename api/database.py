@@ -32,7 +32,7 @@ def db():
 
 
 def init_db():
-    """Cria a tabela Corretores se não existir. Idempotente."""
+    """Cria as tabelas de Corretores, Atribuições e Imóveis se não existirem. Idempotente."""
     with db() as con:
         con.executescript('''
         CREATE TABLE IF NOT EXISTS Corretores (
@@ -41,6 +41,29 @@ def init_db():
           email         TEXT    NOT NULL UNIQUE,
           telefone      TEXT    NOT NULL,
           senha_hash    TEXT    NOT NULL,
+          criado_em     TEXT    DEFAULT CURRENT_TIMESTAMP,
+          atualizado_em TEXT    DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS AtribuicoesConversa (
+          ConversaID    INTEGER PRIMARY KEY,
+          CorretorID    INTEGER REFERENCES Corretores(id),
+          Etapa         TEXT CHECK(Etapa IN ('novo','qualificando','qualificado','agendado','fechado','perdido')),
+          AtualizadoEm  TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS Imoveis (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          titulo        TEXT    NOT NULL,
+          tipo_negocio  TEXT    NOT NULL CHECK(tipo_negocio IN ('compra','aluguel')),
+          tipo_imovel   TEXT    NOT NULL CHECK(tipo_imovel IN ('casa','apartamento','comercial')),
+          estado        TEXT    NOT NULL,
+          bairro        TEXT    NOT NULL,
+          endereco      TEXT,
+          metragem      REAL,
+          quartos       INTEGER,
+          banheiros     INTEGER,
+          vagas         INTEGER,
+          valor         REAL    NOT NULL,
+          status        TEXT    NOT NULL DEFAULT 'disponivel' CHECK(status IN ('disponivel','reservado','vendido','alugado')),
           criado_em     TEXT    DEFAULT CURRENT_TIMESTAMP,
           atualizado_em TEXT    DEFAULT CURRENT_TIMESTAMP
         );

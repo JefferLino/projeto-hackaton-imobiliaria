@@ -5,15 +5,17 @@ Nunca acessa SQLite diretamente nem importa agente/.
 """
 import os
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Literal, Optional
 
 import jwt
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 import database
 from services import corretores as svc
+from services import imoveis as imoveis_svc
+from services import leads as leads_svc
 
 _jwt_secret = os.getenv('JWT_SECRET', 'dev-secret-imobiliaria-2026')
 
@@ -137,6 +139,87 @@ class CorretorResponse(BaseModel):
     criado_em: str
 
 
+class LeadResponse(BaseModel):
+    conversa_id: int
+    telefone: str
+    nome: str
+    status: str
+    etapa: Literal[leads_svc.ETAPAS]
+    corretor_id: Optional[int]
+    corretor_nome: Optional[str]
+    resumo: Optional[str]
+    dados: dict
+    atualizado_em: Optional[str]
+
+
+class LeadUpdate(BaseModel):
+    etapa: Optional[Literal[leads_svc.ETAPAS]] = None
+    corretor_id: Optional[int] = None
+
+
+TIPOS_NEGOCIO = ('compra', 'aluguel')
+TIPOS_IMOVEL = ('casa', 'apartamento', 'comercial')
+STATUS_IMOVEL = ('disponivel', 'reservado', 'vendido', 'alugado')
+
+
+class ImovelCreate(BaseModel):
+    titulo: str = Field(min_length=2, max_length=200)
+    tipo_negocio: Literal[TIPOS_NEGOCIO]
+    tipo_imovel: Literal[TIPOS_IMOVEL]
+    estado: str = Field(min_length=2, max_length=60)
+    bairro: str = Field(min_length=2, max_length=120)
+    endereco: Optional[str] = Field(default=None, max_length=200)
+    metragem: Optional[float] = Field(default=None, gt=0)
+    quartos: Optional[int] = Field(default=None, ge=0)
+    banheiros: Optional[int] = Field(default=None, ge=0)
+    vagas: Optional[int] = Field(default=None, ge=0)
+    valor: float = Field(gt=0)
+    status: Literal[STATUS_IMOVEL] = 'disponivel'
+
+    @field_validator('titulo', 'estado', 'bairro')
+    @classmethod
+    def strip_texto(cls, v: str) -> str:
+        return v.strip()
+
+
+class ImovelUpdate(BaseModel):
+    titulo: Optional[str] = Field(default=None, min_length=2, max_length=200)
+    tipo_negocio: Optional[Literal[TIPOS_NEGOCIO]] = None
+    tipo_imovel: Optional[Literal[TIPOS_IMOVEL]] = None
+    estado: Optional[str] = Field(default=None, min_length=2, max_length=60)
+    bairro: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    endereco: Optional[str] = Field(default=None, max_length=200)
+    metragem: Optional[float] = Field(default=None, gt=0)
+    quartos: Optional[int] = Field(default=None, ge=0)
+    banheiros: Optional[int] = Field(default=None, ge=0)
+    vagas: Optional[int] = Field(default=None, ge=0)
+    valor: Optional[float] = Field(default=None, gt=0)
+    status: Optional[Literal[STATUS_IMOVEL]] = None
+
+    @field_validator('titulo', 'estado', 'bairro')
+    @classmethod
+    def strip_texto(cls, v):
+        return v.strip() if v else v
+
+
+class ImovelResponse(BaseModel):
+    id: int
+    titulo: str
+    tipo_negocio: str
+    tipo_imovel: str
+    estado: str
+    bairro: str
+    endereco: Optional[str]
+    metragem: Optional[float]
+    quartos: Optional[int]
+    banheiros: Optional[int]
+    vagas: Optional[int]
+    valor: float
+    status: str
+    criado_em: str
+    atualizado_em: str
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -207,3 +290,54 @@ def login(body: LoginRequest):
     payload = {'sub': row['id'], 'nome': row['nome'], 'email': row['email']}
     token = jwt.encode(payload, _jwt_secret, algorithm='HS256')
     return {'token': token, 'corretor': {'id': row['id'], 'nome': row['nome'], 'email': row['email']}}
+
+
+# ---------------------------------------------------------------------------
+# Pipeline de Leads
+# ---------------------------------------------------------------------------
+
+@app.get('/api/leads', response_model=list[LeadResponse])
+def listar_leads(etapa: Optional[str] = None, corretor_id: Optional[int] = None):
+    with database.db() as con:
+        return leads_svc.list_leads(con, etapa, corretor_id)
+
+
+@app.patch('/api/leads/{conversa_id}', response_model=LeadResponse)
+def atualizar_lead(conversa_id: int, body: LeadUpdate):
+    with database.db() as con:
+        return leads_svc.update_lead(con, conversa_id, body.etapa, body.corretor_id)
+
+
+# ---------------------------------------------------------------------------
+# Imóveis
+# ---------------------------------------------------------------------------
+
+@app.get('/api/imoveis', response_model=list[ImovelResponse])
+def listar_imoveis():
+    with database.db() as con:
+        return imoveis_svc.list_imoveis(con)
+
+
+@app.post('/api/imoveis', response_model=ImovelResponse, status_code=201)
+def criar_imovel(body: ImovelCreate):
+    with database.db() as con:
+        return imoveis_svc.create_imovel(con, body.model_dump())
+
+
+@app.get('/api/imoveis/{imovel_id}', response_model=ImovelResponse)
+def buscar_imovel(imovel_id: int):
+    with database.db() as con:
+        return imoveis_svc.get_imovel(con, imovel_id)
+
+
+@app.put('/api/imoveis/{imovel_id}', response_model=ImovelResponse)
+def atualizar_imovel(imovel_id: int, body: ImovelUpdate):
+    with database.db() as con:
+        return imoveis_svc.update_imovel(con, imovel_id, body.model_dump(exclude_none=True))
+
+
+@app.delete('/api/imoveis/{imovel_id}', status_code=204)
+def deletar_imovel(imovel_id: int):
+    with database.db() as con:
+        imoveis_svc.delete_imovel(con, imovel_id)
+    return Response(status_code=204)

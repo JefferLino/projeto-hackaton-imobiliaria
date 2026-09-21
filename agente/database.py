@@ -73,6 +73,8 @@ def init_db():
             con.execute('ALTER TABLE Conversas ADD COLUMN AguardandoConfirmacao INTEGER NOT NULL DEFAULT 0')
         if 'AguardandoRetomada' not in columns:
             con.execute('ALTER TABLE Conversas ADD COLUMN AguardandoRetomada INTEGER NOT NULL DEFAULT 0')
+        if 'ModoManual' not in columns:
+            con.execute('ALTER TABLE Conversas ADD COLUMN ModoManual INTEGER NOT NULL DEFAULT 0')
         if 'TelefoneContato' not in {r['name'] for r in con.execute('PRAGMA table_info(Usuarios)')}:
             con.execute('ALTER TABLE Usuarios ADD COLUMN TelefoneContato TEXT')
         con.execute('CREATE INDEX IF NOT EXISTS idx_conversas_telefone ON Conversas(Telefone, Status, ID)')
@@ -97,7 +99,10 @@ def history(cid, phone):
         row = conversation(con, cid, phone)
         messages = con.execute('SELECT ID,Texto,Horario,ResponsavelEnvio FROM Mensagens WHERE ConversaID=? ORDER BY ID', (cid,)).fetchall()
         pending = con.execute("SELECT ID FROM Mensagens m WHERE ConversaID=? AND ResponsavelEnvio='cliente' AND NOT EXISTS (SELECT 1 FROM Mensagens r WHERE r.EmRespostaA=m.ID) ORDER BY ID LIMIT 1", (cid,)).fetchone()
-    return {'conversa_id': cid, 'status': row['Status'], 'motivo_encerramento': row['MotivoEncerramento'] if 'MotivoEncerramento' in row.keys() else None, 'dados': json.loads(row['Dados']), 'mensagens': [dict(m) for m in messages], 'mensagem_pendente_id': pending['ID'] if pending else None}
+    return {'conversa_id': cid, 'status': row['Status'],
+            'motivo_encerramento': row['MotivoEncerramento'] if 'MotivoEncerramento' in row.keys() else None,
+            'dados': json.loads(row['Dados']), 'mensagens': [dict(m) for m in messages],
+            'mensagem_pendente_id': pending['ID'] if pending else None, 'modo_manual': bool(row['ModoManual'])}
 
 
 def save_message(cid, phone, text):
@@ -109,6 +114,22 @@ def save_message(cid, phone, text):
         if row['LockAte'] > time.time():
             raise DatabaseError(409, 'Conversa em processamento; tente novamente')
         mid = con.execute("INSERT INTO Mensagens(ConversaID,Texto,ResponsavelEnvio) VALUES (?,?,'cliente')", (cid, text)).lastrowid
+    return {'mensagem_id': mid}
+
+
+def send_manual_message(cid, phone, text):
+    """Grava a resposta manual do corretor e marca a conversa como assumida (IA pausada)."""
+    with db() as con:
+        con.execute('BEGIN IMMEDIATE')
+        row = conversation(con, cid, phone)
+        if row['Status'] != 'ativa':
+            raise DatabaseError(409, 'Conversa encerrada. Não é possível enviar mensagens.')
+        if row['LockAte'] > time.time():
+            raise DatabaseError(409, 'Conversa em processamento; tente novamente')
+        pending = con.execute("SELECT ID FROM Mensagens m WHERE ConversaID=? AND ResponsavelEnvio='cliente' AND NOT EXISTS (SELECT 1 FROM Mensagens r WHERE r.EmRespostaA=m.ID) ORDER BY ID DESC LIMIT 1", (cid,)).fetchone()
+        con.execute('UPDATE Conversas SET ModoManual=1 WHERE ID=?', (cid,))
+        mid = con.execute("INSERT INTO Mensagens(ConversaID,Texto,ResponsavelEnvio,EmRespostaA) VALUES (?,?,'bot',?)",
+                          (cid, text, pending['ID'] if pending else None)).lastrowid
     return {'mensagem_id': mid}
 
 
@@ -192,12 +213,13 @@ def receive_whatsapp(phone, text, option=None, inferred_option=None):
         con.execute('BEGIN IMMEDIATE')
         con.execute('INSERT INTO Usuarios(Telefone) VALUES (?) ON CONFLICT(Telefone) DO NOTHING', (phone,))
         row = con.execute("SELECT * FROM Conversas WHERE Telefone=? AND Status='ativa' ORDER BY ID DESC LIMIT 1", (phone,)).fetchone()
+        modo_manual = bool(row['ModoManual']) if row else False
         prompt = None
         if row:
             if row['LockAte'] > time.time():
                 raise DatabaseError(409, 'Atendimento em processamento; repita esta chamada depois')
             pending = con.execute("SELECT ID FROM Mensagens m WHERE ConversaID=? AND ResponsavelEnvio='cliente' AND NOT EXISTS (SELECT 1 FROM Mensagens r WHERE r.EmRespostaA=m.ID) LIMIT 1", (row['ID'],)).fetchone()
-            if pending:
+            if pending and not modo_manual:
                 raise DatabaseError(409, f"Há mensagem pendente; chame /api/agente/responder com conversa_id={row['ID']} e mensagem_id={pending['ID']}")
             # Uma conversa criada sem mensagens ainda não é um atendimento anterior.
             # Sem histórico, MAX(Horario) e age são NULL, independentemente de DataInicio.
@@ -228,4 +250,4 @@ def receive_whatsapp(phone, text, option=None, inferred_option=None):
             result = {'conversa_id':cid, 'mensagem_id':mid, 'resposta':prompt, 'status':'ativa',
                       'aguardando_retomada':True, 'aguardando_confirmacao':False, 'dados':json.loads(row['Dados'])}
             con.execute("INSERT INTO Mensagens(ConversaID,Texto,ResponsavelEnvio,EmRespostaA,Resultado) VALUES (?,?,'bot',?,?)", (cid, prompt, mid, json.dumps(result, ensure_ascii=False)))
-        return cid, mid, result
+        return cid, mid, result, modo_manual

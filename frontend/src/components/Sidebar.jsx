@@ -1,9 +1,10 @@
-import { Users, LayoutDashboard } from 'lucide-react'
+import { Users, Building2, LayoutDashboard } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
   { label: 'Corretores', href: '/corretores', icon: Users },
+  { label: 'Imóveis', href: '/imoveis', icon: Building2 },
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
 ]
 

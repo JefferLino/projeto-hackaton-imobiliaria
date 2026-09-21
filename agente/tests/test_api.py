@@ -379,3 +379,44 @@ def test_yes_after_fallback_resumes_without_model(client, monkeypatch, stage, ex
     assert expected in result['resposta']
     assert result['dados'] == data
     assert result['aguardando_confirmacao'] == (stage == 'completo')
+
+
+def test_assumir_conversa_grava_mensagem_manual(client):
+    body = setup_message(client)
+    res = client.post(f"/api/conversas/{body['conversa_id']}/assumir",
+                       json={'telefone': body['telefone'], 'texto': 'Oi, aqui é o corretor João.'})
+    assert res.status_code == 200
+    assert 'mensagem_id' in res.json()
+    historico = client.get(f"/api/conversas/{body['conversa_id']}", params={'telefone': body['telefone']}).json()
+    assert historico['modo_manual'] is True
+    assert historico['mensagens'][-1]['ResponsavelEnvio'] == 'bot'
+    assert historico['mensagens'][-1]['Texto'] == 'Oi, aqui é o corretor João.'
+
+
+def test_modo_manual_pausa_ia_no_whatsapp(client, minimal_ai):
+    first = whatsapp(client, 'Procuro apartamento').json()
+    chamadas_antes = len(minimal_ai)
+    client.post(f"/api/conversas/{first['conversa_id']}/assumir",
+                json={'telefone': '5511999999999', 'texto': 'Vou te ajudar por aqui.'})
+    segunda = whatsapp(client, 'Legal, obrigado!')
+    assert segunda.status_code == 200
+    assert segunda.json()['resposta'] == ''
+    terceira = whatsapp(client, 'Mais uma pergunta, sem esperar resposta.')
+    assert terceira.status_code == 200
+    assert len(minimal_ai) == chamadas_antes
+
+
+def test_assumir_conversa_encerrada(client):
+    body = setup_message(client)
+    with database.db() as con:
+        con.execute("UPDATE Conversas SET Status='encerrada' WHERE ID=?", (body['conversa_id'],))
+    res = client.post(f"/api/conversas/{body['conversa_id']}/assumir",
+                       json={'telefone': body['telefone'], 'texto': 'Oi'})
+    assert res.status_code == 409
+
+
+def test_assumir_conversa_telefone_errado(client):
+    body = setup_message(client)
+    res = client.post(f"/api/conversas/{body['conversa_id']}/assumir",
+                       json={'telefone': '5599999999999', 'texto': 'Oi'})
+    assert res.status_code == 404

@@ -85,10 +85,13 @@ def whatsapp_message(body: WhatsAppMessage):
         except llm.LLMError:
             # Ainda salva a mensagem e repete a escolha sem decidir pelo cliente.
             inferred = None
-    cid, mid, cached = database.receive_whatsapp(body.telefone, body.texto,
+    cid, mid, cached, modo_manual = database.receive_whatsapp(body.telefone, body.texto,
                                                body.opcao_atendimento, inferred)
     if cached is not None:
         return cached
+    if modo_manual:
+        return {'conversa_id': cid, 'mensagem_id': mid, 'resposta': '', 'status': 'ativa',
+                'aguardando_confirmacao': False, 'aguardando_retomada': False}
     try:
         return respond(AgentRequest(telefone=body.telefone, conversa_id=cid, mensagem_id=mid))
     except llm.LLMError as exc:
@@ -108,6 +111,11 @@ def history(cid: int, telefone: str):
 @app.post('/api/conversas/{cid}/mensagens', dependencies=[Depends(auth)])
 def save_message(cid: int, body: NewMessage):
     return database.save_message(cid, body.telefone, body.texto)
+
+
+@app.post('/api/conversas/{cid}/assumir', dependencies=[Depends(auth)])
+def assumir_conversa(cid: int, body: NewMessage):
+    return database.send_manual_message(cid, body.telefone, body.texto)
 
 
 @app.post('/api/agente/responder', dependencies=[Depends(auth)])

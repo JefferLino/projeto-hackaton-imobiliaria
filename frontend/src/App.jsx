@@ -4,10 +4,8 @@ import AppLayout from './components/AppLayout'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import CorretoresPage from './pages/CorretoresPage'
-
-function Dashboard() {
-  return <h1 className="p-6">Dashboard do Corretor</h1>
-}
+import ImoveisPage from './pages/ImoveisPage'
+import PipelinePage from './pages/PipelinePage'
 
 export default function App() {
   return (
@@ -19,7 +17,8 @@ export default function App() {
           <Route element={<AppLayout />}>
             <Route path="/" />
             <Route path="/corretores" element={<CorretoresPage />} />
-            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/imoveis" element={<ImoveisPage />} />
+            <Route path="/dashboard" element={<PipelinePage />} />
           </Route>
         </Route>
       </Routes>
