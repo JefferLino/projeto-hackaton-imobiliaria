@@ -1,4 +1,4 @@
-import { Loader2, Send } from 'lucide-react'
+import { AlertTriangle, Check, Loader2, Send } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -40,11 +40,15 @@ export default function LeadConversationDialog({ lead, open, onClose }) {
     if (!texto.trim() || !lead) return
     setEnviando(true)
     try {
-      await enviarMensagemManual(lead.conversa_id, lead.telefone, texto.trim())
+      const resultado = await enviarMensagemManual(lead.conversa_id, lead.telefone, texto.trim())
       setTexto('')
       const atualizado = await buscarHistorico(lead.conversa_id, lead.telefone)
       setHistorico(atualizado)
-      toast.success('Mensagem enviada.')
+      if (resultado.whatsapp_enviado) {
+        toast.success('Mensagem enviada pelo WhatsApp.')
+      } else {
+        toast.warning('Mensagem salva na conversa, mas não foi possível enviar pelo WhatsApp.')
+      }
     } catch (err) {
       toast.error(err?.detail ?? 'Erro ao enviar mensagem.')
     } finally {
@@ -95,6 +99,24 @@ export default function LeadConversationDialog({ lead, open, onClose }) {
                         {m.ResponsavelEnvio === 'cliente' ? 'Cliente' : 'Atendimento'}
                       </p>
                       {m.Texto}
+                      {m.ResponsavelEnvio === 'bot' && m.StatusEnvio && (
+                        <p
+                          className={cn(
+                            'mt-1 flex items-center gap-1 text-[10px]',
+                            m.StatusEnvio === 'falha' ? 'text-red-200' : 'opacity-70'
+                          )}
+                        >
+                          {m.StatusEnvio === 'falha' ? (
+                            <>
+                              <AlertTriangle className="h-3 w-3" /> Não entregue no WhatsApp
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-3 w-3" /> Enviado
+                            </>
+                          )}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))

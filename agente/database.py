@@ -77,6 +77,8 @@ def init_db():
             con.execute('ALTER TABLE Conversas ADD COLUMN ModoManual INTEGER NOT NULL DEFAULT 0')
         if 'TelefoneContato' not in {r['name'] for r in con.execute('PRAGMA table_info(Usuarios)')}:
             con.execute('ALTER TABLE Usuarios ADD COLUMN TelefoneContato TEXT')
+        if 'StatusEnvio' not in {r['name'] for r in con.execute('PRAGMA table_info(Mensagens)')}:
+            con.execute('ALTER TABLE Mensagens ADD COLUMN StatusEnvio TEXT')
         con.execute('CREATE INDEX IF NOT EXISTS idx_conversas_telefone ON Conversas(Telefone, Status, ID)')
 
 
@@ -97,7 +99,7 @@ def create_conversation(phone, name):
 def history(cid, phone):
     with db() as con:
         row = conversation(con, cid, phone)
-        messages = con.execute('SELECT ID,Texto,Horario,ResponsavelEnvio FROM Mensagens WHERE ConversaID=? ORDER BY ID', (cid,)).fetchall()
+        messages = con.execute('SELECT ID,Texto,Horario,ResponsavelEnvio,StatusEnvio FROM Mensagens WHERE ConversaID=? ORDER BY ID', (cid,)).fetchall()
         pending = con.execute("SELECT ID FROM Mensagens m WHERE ConversaID=? AND ResponsavelEnvio='cliente' AND NOT EXISTS (SELECT 1 FROM Mensagens r WHERE r.EmRespostaA=m.ID) ORDER BY ID LIMIT 1", (cid,)).fetchone()
     return {'conversa_id': cid, 'status': row['Status'],
             'motivo_encerramento': row['MotivoEncerramento'] if 'MotivoEncerramento' in row.keys() else None,
@@ -131,6 +133,12 @@ def send_manual_message(cid, phone, text):
         mid = con.execute("INSERT INTO Mensagens(ConversaID,Texto,ResponsavelEnvio,EmRespostaA) VALUES (?,?,'bot',?)",
                           (cid, text, pending['ID'] if pending else None)).lastrowid
     return {'mensagem_id': mid}
+
+
+def set_message_status(mid, status):
+    """Registra o resultado do envio real ao WhatsApp para a mensagem."""
+    with db() as con:
+        con.execute('UPDATE Mensagens SET StatusEnvio=? WHERE ID=?', (status, mid))
 
 
 def begin_response(cid, phone, message_id, token):

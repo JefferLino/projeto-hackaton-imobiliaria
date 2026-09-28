@@ -1,4 +1,4 @@
-import { URL_API_RESPOSTA } from '../config/config.js'
+import { URL_API_RESPOSTA, AGENTE_API_KEY } from '../config/config.js'
 
 
 export async function gerarResposta(
@@ -12,13 +12,14 @@ export async function gerarResposta(
             method: 'POST',
 
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-API-Key': AGENTE_API_KEY
             },
 
             body: JSON.stringify({
                 telefone: "+" + numero,
-                texto: mensagem, 
-                opcao_atendimento: ''
+                texto: mensagem,
+                opcao_atendimento: null
             })
         }
     )

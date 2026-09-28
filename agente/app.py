@@ -8,6 +8,8 @@ import database
 import followups
 import reminder_store
 import llm
+import whatsapp_bot
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -115,7 +117,17 @@ def save_message(cid: int, body: NewMessage):
 
 @app.post('/api/conversas/{cid}/assumir', dependencies=[Depends(auth)])
 def assumir_conversa(cid: int, body: NewMessage):
-    return database.send_manual_message(cid, body.telefone, body.texto)
+    result = database.send_manual_message(cid, body.telefone, body.texto)
+    try:
+        whatsapp_bot.enviar(body.telefone, body.texto)
+        result['whatsapp_enviado'] = True
+        result['status_envio'] = 'enviado'
+    except httpx.HTTPError as exc:
+        result['whatsapp_enviado'] = False
+        result['whatsapp_erro'] = str(exc)
+        result['status_envio'] = 'falha'
+    database.set_message_status(result['mensagem_id'], result['status_envio'])
+    return result
 
 
 @app.post('/api/agente/responder', dependencies=[Depends(auth)])

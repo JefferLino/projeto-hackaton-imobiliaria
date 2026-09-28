@@ -1,11 +1,13 @@
 import concurrent.futures
 import threading
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 import app
 import llm
 import database
+import whatsapp_bot
 
 
 @pytest.fixture
@@ -391,6 +393,30 @@ def test_assumir_conversa_grava_mensagem_manual(client):
     assert historico['modo_manual'] is True
     assert historico['mensagens'][-1]['ResponsavelEnvio'] == 'bot'
     assert historico['mensagens'][-1]['Texto'] == 'Oi, aqui é o corretor João.'
+
+
+def test_assumir_conversa_grava_status_envio_sucesso(client, monkeypatch):
+    monkeypatch.setattr(whatsapp_bot, 'enviar', lambda telefone, mensagem: None)
+    body = setup_message(client)
+    res = client.post(f"/api/conversas/{body['conversa_id']}/assumir",
+                       json={'telefone': body['telefone'], 'texto': 'Oi, aqui é o corretor João.'})
+    assert res.json()['whatsapp_enviado'] is True
+    assert res.json()['status_envio'] == 'enviado'
+    historico = client.get(f"/api/conversas/{body['conversa_id']}", params={'telefone': body['telefone']}).json()
+    assert historico['mensagens'][-1]['StatusEnvio'] == 'enviado'
+
+
+def test_assumir_conversa_grava_status_envio_falha(client, monkeypatch):
+    def fake(telefone, mensagem):
+        raise httpx.ConnectError('recusado')
+    monkeypatch.setattr(whatsapp_bot, 'enviar', fake)
+    body = setup_message(client)
+    res = client.post(f"/api/conversas/{body['conversa_id']}/assumir",
+                       json={'telefone': body['telefone'], 'texto': 'Oi, aqui é o corretor João.'})
+    assert res.json()['whatsapp_enviado'] is False
+    assert res.json()['status_envio'] == 'falha'
+    historico = client.get(f"/api/conversas/{body['conversa_id']}", params={'telefone': body['telefone']}).json()
+    assert historico['mensagens'][-1]['StatusEnvio'] == 'falha'
 
 
 def test_modo_manual_pausa_ia_no_whatsapp(client, minimal_ai):
