@@ -131,13 +131,16 @@ export function configurarMensagens(sock) {
                         resposta
                     )
 
-                    if (!resposta) {
+                    if (!resposta ||
+                        !String(resposta).trim()) {
+
                         console.log(
-                            '[BOT] API não retornou uma resposta.'
+                            '[BOT] API não retornou uma mensagem. Nada será enviado ao cliente.'
                         )
 
                         continue
                     }
+
 
                     await sock.sendMessage(
                         remoteJid,
