@@ -154,3 +154,12 @@ O resumo usa somente as preferencias da propria conversa. Se ainda nao houver pr
 A verificacao roda quando o endpoint e chamado. Para execucao periodica sem clicar na tela, configure um agendador externo (por exemplo, Agendador de Tarefas do Windows) para fazer POST nesse endpoint a cada 15 minutos. Nao ha tarefa de fundo implicita. O retorno inclui `enviados`, `cancelados`, `falhas` e os resultados por conversa.
 
 Para alterar a API receptora de lembretes, edite `FOLLOWUP_URL` em `config.py` e reinicie a API do agente. Inclua `config.py` na entrega. O padrao continua sendo `http://127.0.0.1:5500/api/lembretes`.
+
+
+### Envio pelo bot WhatsApp
+
+O destino padrao de `FOLLOWUP_URL` em `config.py` agora e `http://localhost:3000/enviar-mensagem`. Cada POST envia apenas `telefone` e `mensagem`. E necessario HTTP 2xx com JSON `sucesso: true` para contar como tentativa enviada. HTTP de erro, JSON invalido ou sucesso ausente/falso mantem o lembrete pendente.
+
+O cabecalho `Idempotency-Key` continua enviado para que o receptor possa deduplicar uma repeticao apos timeout; isso so evita duplicatas se o bot implementar esse suporte. O agente nao modifica o destinatario com base no telefone retornado pelo bot. O identificador e o texto enviados pertencem a conversa selecionada.
+
+Para testar sem envio real, altere `FOLLOWUP_URL` para `http://127.0.0.1:5500/api/lembretes`. O receptor de testes tambem aceita o novo corpo e devolve `sucesso: true`. Como o contrato real nao inclui conversa_id nem tentativa, esses campos ficam ausentes nos logs desse receptor quando recebe o corpo reduzido. Reinicie a API apos alterar a configuracao.

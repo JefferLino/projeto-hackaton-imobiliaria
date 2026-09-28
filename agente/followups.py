@@ -22,9 +22,13 @@ def settings():
 def send(payload):
     # Destino definido em config.py; sem proxy e sem redirecionamentos.
     with httpx.Client(timeout=10, trust_env=False, follow_redirects=False) as client:
-        response = client.post(config.FOLLOWUP_URL, json=payload,
+        response = client.post(config.FOLLOWUP_URL, json={'telefone': payload['telefone'], 'mensagem': payload['mensagem']},
                                headers={'Idempotency-Key': payload['evento_id']})
         response.raise_for_status()
+        result = response.json()
+        if not isinstance(result, dict) or result.get('sucesso') is not True:
+            raise ValueError('API de envio nao confirmou sucesso')
+        return result
 
 
 def process(limit=50):

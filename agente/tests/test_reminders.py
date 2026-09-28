@@ -134,14 +134,17 @@ def test_transport_uses_configured_receiver(monkeypatch):
     real_client=httpx.Client
     def handler(request):
         calls.append(request)
-        return httpx.Response(200,json={'recebido':True})
+        return httpx.Response(200,json={'sucesso':True,'id_mensagem':'msg-test'})
     def local_client(**kwargs):
         assert kwargs['trust_env'] is False
         assert kwargs['follow_redirects'] is False
         return real_client(transport=httpx.MockTransport(handler),**kwargs)
     monkeypatch.setattr(followups.httpx,'Client',local_client)
     monkeypatch.setattr(followups.config, 'FOLLOWUP_URL', 'http://127.0.0.1:5510/teste')
-    followups.send({'evento_id':'sample'})
+    result=followups.send({'evento_id':'sample','telefone':'5511999999999','mensagem':'Deseja continuar?'})
+    import json
+    assert json.loads(calls[0].content)=={'telefone':'5511999999999','mensagem':'Deseja continuar?'}
+    assert result['id_mensagem']=='msg-test'
     assert str(calls[0].url)=='http://127.0.0.1:5510/teste'
     assert calls[0].headers['Idempotency-Key']=='sample'
 
@@ -152,3 +155,17 @@ def test_auth_and_invalid_config(client, monkeypatch):
     monkeypatch.setenv('FOLLOWUP_MAX_ATTEMPTS','0')
     response=client.post('/api/atendimentos/processar-inativos',headers={'X-API-Key':'secret'})
     assert response.status_code==500
+
+
+@pytest.mark.parametrize('status,body', [(200, {'sucesso':False}), (200, {}), (200, {'sucesso':'true'}), (500, {'sucesso':True})])
+def test_delivery_rejected_does_not_count(client, monkeypatch, status, body):
+    import httpx
+    real_client=httpx.Client
+    monkeypatch.setattr(followups.httpx,'Client',lambda **kwargs: real_client(transport=httpx.MockTransport(lambda request: httpx.Response(status,json=body)),**kwargs))
+    conversation()
+    result=followups.process()
+    assert result['falhas']==1
+    assert result['enviados']==0
+    with database.db() as con:
+        assert con.execute("SELECT COUNT(*) FROM Lembretes WHERE Status='enviado'").fetchone()[0]==0
+        assert con.execute('SELECT LockToken FROM Conversas').fetchone()[0] is None
