@@ -446,3 +446,80 @@ def test_assumir_conversa_telefone_errado(client):
     res = client.post(f"/api/conversas/{body['conversa_id']}/assumir",
                        json={'telefone': '5599999999999', 'texto': 'Oi'})
     assert res.status_code == 404
+
+
+def create_catalog(rows):
+    with database.db() as con:
+        con.execute('''CREATE TABLE IF NOT EXISTS Imoveis (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, titulo TEXT NOT NULL, tipo_negocio TEXT NOT NULL,
+          tipo_imovel TEXT NOT NULL, estado TEXT NOT NULL, bairro TEXT NOT NULL, endereco TEXT,
+          metragem REAL, quartos INTEGER, banheiros INTEGER, vagas INTEGER, valor REAL NOT NULL,
+          status TEXT NOT NULL DEFAULT 'disponivel')''')
+        for row in rows:
+            con.execute(f"INSERT INTO Imoveis ({','.join(row)}) VALUES ({','.join('?' for _ in row)})", list(row.values()))
+
+
+def fake_extraction(monkeypatch, **dados):
+    def fake(schema, system, messages):
+        if schema is llm.Reply:
+            return llm.Reply(resposta='Certo!')
+        return llm.Extraction(dados=llm.Preferences(**dados), dispensar_opcionais=True)
+    monkeypatch.setattr(llm, 'chat', fake)
+
+
+def test_investimento_encaminha_para_especialista(client, monkeypatch):
+    fake_extraction(monkeypatch, tipo_negocio='investimento', estado='São Paulo', objetivo_investimento='renda',
+                    ticket_investimento=700000, expectativa_retorno='0,6% ao mês', urgencia='Média',
+                    nome_contato='Ana', telefone_contato='11988887777')
+    create_catalog([
+        {'titulo': 'Apto Moema', 'tipo_negocio': 'compra', 'tipo_imovel': 'apartamento', 'estado': 'SP', 'bairro': 'Moema', 'valor': 650000},
+        {'titulo': 'Casa cara', 'tipo_negocio': 'compra', 'tipo_imovel': 'casa', 'estado': 'SP', 'bairro': 'Jardins', 'valor': 2000000},
+        {'titulo': 'Apto aluguel', 'tipo_negocio': 'aluguel', 'tipo_imovel': 'apartamento', 'estado': 'SP', 'bairro': 'Moema', 'valor': 4000},
+    ])
+    result = client.post('/api/agente/responder', json=setup_message(client, text='Quero investir para renda')).json()
+    assert result['aguardando_confirmacao'] is True
+    assert result['campos_obrigatorios_pendentes'] == []
+    assert 'especialista em investimentos' in result['resposta']
+    assert 'Apto Moema' in result['resposta'] and 'Casa cara' not in result['resposta']
+    assert len(result['imoveis_sugeridos']) == 1
+    with database.db() as con:
+        investidor = con.execute('SELECT Objetivo, Ticket FROM Investidores').fetchone()
+        assert tuple(investidor) == ('renda', 700000)
+        assert con.execute('SELECT COUNT(*) FROM Interessados').fetchone()[0] == 0
+
+
+def test_investimento_pede_campos_de_investidor(client, monkeypatch):
+    fake_extraction(monkeypatch, tipo_negocio='investimento', estado='SP')
+    instructions = []
+    original = llm.generate_reply
+    monkeypatch.setattr(llm, 'generate_reply', lambda current, instruction, messages: instructions.append(instruction) or original(current, instruction, messages))
+    result = client.post('/api/agente/responder', json=setup_message(client, text='Quero investir')).json()
+    assert result['campos_obrigatorios_pendentes'][:3] == ['objetivo_investimento', 'ticket_investimento', 'expectativa_retorno']
+    assert 'renda com aluguel ou valorização' in instructions[0]
+    assert 'perfil investidor' in instructions[0]
+
+
+def test_sugere_imoveis_do_catalogo_priorizando_bairro(client, monkeypatch):
+    fake_extraction(monkeypatch, tipo_negocio='compra', estado='SP', bairro='Moema', tipo_imovel='apartamento',
+                    urgencia='Alta', quartos=2, valor_maximo=900000, nome_contato='Ana', telefone_contato='11988887777')
+    create_catalog([
+        {'titulo': 'Apto Pinheiros', 'tipo_negocio': 'compra', 'tipo_imovel': 'apartamento', 'estado': 'SP', 'bairro': 'Pinheiros', 'valor': 500000, 'quartos': 2},
+        {'titulo': 'Apto Moema', 'tipo_negocio': 'compra', 'tipo_imovel': 'apartamento', 'estado': 'São Paulo', 'bairro': 'moema', 'valor': 800000, 'quartos': 3},
+        {'titulo': 'Apto 1 quarto', 'tipo_negocio': 'compra', 'tipo_imovel': 'apartamento', 'estado': 'SP', 'bairro': 'Moema', 'valor': 400000, 'quartos': 1},
+        {'titulo': 'Apto RJ', 'tipo_negocio': 'compra', 'tipo_imovel': 'apartamento', 'estado': 'RJ', 'bairro': 'Moema', 'valor': 400000, 'quartos': 2},
+        {'titulo': 'Apto vendido', 'tipo_negocio': 'compra', 'tipo_imovel': 'apartamento', 'estado': 'SP', 'bairro': 'Moema', 'valor': 400000, 'quartos': 2, 'status': 'vendido'},
+    ])
+    result = client.post('/api/agente/responder', json=setup_message(client)).json()
+    resposta = result['resposta']
+    assert resposta.index('Apto Moema') < resposta.index('Apto Pinheiros')
+    for ausente in ('Apto 1 quarto', 'Apto RJ', 'Apto vendido'):
+        assert ausente not in resposta
+    assert 'Deseja encerrar a conversa ou alterar algo?' in resposta
+
+
+def test_sem_catalogo_nao_quebra_atendimento(client, monkeypatch):
+    fake_extraction(monkeypatch, tipo_negocio='aluguel', estado='SP', bairro='Moema', tipo_imovel='casa',
+                    urgencia='Baixa', nome_contato='Ana', telefone_contato='11988887777')
+    result = client.post('/api/agente/responder', json=setup_message(client)).json()
+    assert result['imoveis_sugeridos'] == []
+    assert 'não encontrei imóveis disponíveis' in result['resposta']

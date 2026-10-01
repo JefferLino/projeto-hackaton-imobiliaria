@@ -21,3 +21,9 @@ frontend/dist/
 # Ambiente
 .env
 .env.*
+
+# Sessão do WhatsApp (credenciais)
+baileysWhatsappSendMessage/auth_info/
+
+# macOS
+.DS_Store

@@ -67,6 +67,13 @@ def init_db():
           Banheiros INTEGER, Quartos INTEGER, ValorMaximo REAL, Vagas INTEGER,
           TipoNegocio TEXT NOT NULL, TipoImovel TEXT NOT NULL, Urgencia TEXT NOT NULL,
           AtualizadoEm TEXT DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS Investidores (
+          Telefone TEXT PRIMARY KEY REFERENCES Usuarios(Telefone),
+          ConversaID INTEGER NOT NULL REFERENCES Conversas(ID),
+          Estado TEXT NOT NULL, Bairro TEXT, TipoImovel TEXT,
+          Objetivo TEXT NOT NULL CHECK(Objetivo IN ('renda','valorizacao')),
+          Ticket REAL NOT NULL, ExpectativaRetorno TEXT NOT NULL, Urgencia TEXT NOT NULL,
+          AtualizadoEm TEXT DEFAULT CURRENT_TIMESTAMP);
         ''')
         columns = {r['name'] for r in con.execute('PRAGMA table_info(Conversas)')}
         if 'AguardandoConfirmacao' not in columns:
@@ -173,7 +180,14 @@ def finish_response(cid, phone, message_id, token, current, complete, offered, r
             raise DatabaseError(409, 'Processamento expirou; tente novamente')
         con.execute('UPDATE Usuarios SET Nome=COALESCE(?,Nome),TelefoneContato=COALESCE(?,TelefoneContato) WHERE Telefone=?',
                     (current.get('nome_contato'), current.get('telefone_contato'), phone))
-        if complete:
+        if complete and current.get('tipo_negocio') == 'investimento':
+            con.execute('''INSERT INTO Investidores(Telefone,ConversaID,Estado,Bairro,TipoImovel,Objetivo,Ticket,ExpectativaRetorno,Urgencia)
+              VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(Telefone) DO UPDATE SET
+              ConversaID=excluded.ConversaID,Estado=excluded.Estado,Bairro=excluded.Bairro,TipoImovel=excluded.TipoImovel,
+              Objetivo=excluded.Objetivo,Ticket=excluded.Ticket,ExpectativaRetorno=excluded.ExpectativaRetorno,
+              Urgencia=excluded.Urgencia,AtualizadoEm=CURRENT_TIMESTAMP''',
+              (phone, cid, *[current.get(k) for k in ['estado','bairro','tipo_imovel','objetivo_investimento','ticket_investimento','expectativa_retorno','urgencia']]))
+        elif complete:
             con.execute('''INSERT INTO Interessados(Telefone,ConversaID,Estado,Bairro,Metragem,Banheiros,Quartos,ValorMaximo,Vagas,TipoNegocio,TipoImovel,Urgencia)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(Telefone) DO UPDATE SET
               ConversaID=excluded.ConversaID,Estado=excluded.Estado,Bairro=excluded.Bairro,Metragem=excluded.Metragem,
@@ -202,7 +216,8 @@ def waiting_resume(phone):
 def resume_prompt(con, row):
     labels = {'estado':'Estado', 'bairro':'Bairro', 'tipo_negocio':'Negócio', 'tipo_imovel':'Imóvel',
               'urgencia':'Urgência', 'metragem':'Metragem', 'banheiros':'Banheiros', 'quartos':'Quartos',
-              'valor_maximo':'Valor máximo', 'vagas':'Vagas'}
+              'valor_maximo':'Valor máximo', 'vagas':'Vagas', 'objetivo_investimento':'Objetivo',
+              'ticket_investimento':'Ticket', 'expectativa_retorno':'Expectativa de retorno'}
     data = json.loads(row['Dados'])
     summary = '; '.join(f'{label}: {data[key]}' for key, label in labels.items() if data.get(key) is not None)
     if not summary:
