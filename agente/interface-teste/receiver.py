@@ -1,9 +1,10 @@
 """Servidor exclusivo de testes: recebe lembretes e serve a interface."""
 import json
+import uuid
 import os
 import sqlite3
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -20,22 +21,23 @@ def connection():
 
 
 class Reminder(BaseModel):
-    evento_id: str = Field(min_length=1,max_length=120)
-    conversa_id: int
+    evento_id: str | None = Field(default=None,min_length=1,max_length=120)
+    conversa_id: int | None = None
     telefone: str
-    tentativa: int
-    tipo: str
+    tentativa: int | None = None
+    tipo: str = 'retomada_atendimento'
     mensagem: str
 
 
 @app.post('/api/lembretes')
-def receive(body: Reminder):
+def receive(body: Reminder, idempotency_key: str | None = Header(default=None)):
+    body.evento_id = body.evento_id or idempotency_key or uuid.uuid4().hex
     con = connection()
     try:
         with con:
             con.execute('INSERT INTO Recebimentos(EventoID,Payload) VALUES (?,?) ON CONFLICT(EventoID) DO NOTHING',
                         (body.evento_id, body.model_dump_json()))
-        return {'recebido':True,'evento_id':body.evento_id}
+        return {'sucesso':True,'recebido':True,'evento_id':body.evento_id,'id_mensagem':body.evento_id}
     finally:
         con.close()
 

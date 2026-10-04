@@ -174,14 +174,4 @@ app.listen(
  * Inicializa WhatsApp
  */
 
-const sock =
-    await conectarWhatsApp()
-
-
-/*
- * Configura recebimento
- */
-
-if (sock) {
-    configurarMensagens(sock)
-}
+await conectarWhatsApp(configurarMensagens)

@@ -15,6 +15,7 @@ import {
 let sock = null
 let whatsappConectado = false
 let iniciandoConexao = false
+let configurarSocket = null
 
 
 export function getSocket() {
@@ -34,7 +35,11 @@ function esperar(ms) {
 }
 
 
-export async function conectarWhatsApp() {
+export async function conectarWhatsApp(configurar) {
+
+    if (configurar) {
+        configurarSocket = configurar
+    }
 
     if (iniciandoConexao) {
 
@@ -70,6 +75,9 @@ export async function conectarWhatsApp() {
             'creds.update',
             saveCreds
         )
+
+        // Cada reconexão (inclusive a que ocorre logo após ler o QR) cria um socket novo sem ouvintes.
+        configurarSocket?.(sock)
 
 
         sock.ev.on(

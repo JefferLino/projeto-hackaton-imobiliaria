@@ -5,7 +5,7 @@ $pythonPath = Join-Path $projectRoot '.venv\Scripts\python.exe'
 $previousOrigins = $env:CORS_ORIGINS
 Push-Location $projectRoot
 try {
-    $env:CORS_ORIGINS = 'http://127.0.0.1:5500,http://localhost:5500'
+    $env:CORS_ORIGINS = 'http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:8000'
     & $pythonPath -m uvicorn app:app --host 127.0.0.1 --port 8000
 } finally {
     $env:CORS_ORIGINS = $previousOrigins

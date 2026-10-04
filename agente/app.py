@@ -4,6 +4,7 @@ import secrets
 from typing import Literal
 from contextlib import asynccontextmanager
 
+import catalogo
 import database
 import followups
 import reminder_store
@@ -16,7 +17,35 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 REQUIRED = ['estado', 'bairro', 'tipo_negocio', 'tipo_imovel', 'urgencia']
+INVESTMENT_REQUIRED = ['tipo_negocio', 'estado', 'objetivo_investimento', 'ticket_investimento',
+                       'expectativa_retorno', 'urgencia']
 CONTACT_REQUIRED = ['nome_contato', 'telefone_contato']
+SEARCH_FIELDS = {'tipo_negocio', 'tipo_imovel', 'estado', 'bairro', 'valor_maximo', 'ticket_investimento',
+                 'quartos', 'banheiros', 'vagas', 'metragem'}
+LABELS = {'estado': 'o estado de interesse', 'bairro': 'o bairro de interesse',
+          'tipo_negocio': 'se deseja comprar, alugar ou investir',
+          'tipo_imovel': 'se procura casa, apartamento ou comercial',
+          'urgencia': 'a urgência (baixa, média ou alta)', 'nome_contato': 'seu nome',
+          'telefone_contato': 'seu telefone para contato com DDD',
+          'objetivo_investimento': 'se o objetivo é renda com aluguel ou valorização',
+          'ticket_investimento': 'o valor disponível para investir',
+          'expectativa_retorno': 'a expectativa de retorno (por exemplo, % ao mês ou ao ano)'}
+
+
+def is_investment(data):
+    return data.get('tipo_negocio') == 'investimento'
+
+
+def required_fields(data):
+    return INVESTMENT_REQUIRED if is_investment(data) else REQUIRED
+
+
+def optional_fields(data):
+    return ['bairro', 'tipo_imovel'] if is_investment(data) else ['metragem', 'banheiros', 'quartos', 'valor_maximo', 'vagas']
+
+
+def pending(data):
+    return [key for key in required_fields(data) + CONTACT_REQUIRED if not data.get(key)]
 
 
 @asynccontextmanager
@@ -153,21 +182,19 @@ def respond(body: AgentRequest):
             'quero continuar', 'quero prosseguir', 'sim quero continuar', 'sim, quero continuar',
             'sim quero prosseguir', 'sim, quero prosseguir', 'sim, por favor', 'sim por favor',
         }:
-            pending_fields = [key for key in REQUIRED + CONTACT_REQUIRED if not current.get(key)]
-            labels = {'estado': 'o estado de interesse', 'bairro': 'o bairro de interesse',
-                      'tipo_negocio': 'se deseja comprar ou alugar', 'tipo_imovel': 'se procura casa, apartamento ou comercial',
-                      'urgencia': 'a urgência (baixa, média ou alta)', 'nome_contato': 'seu nome',
-                      'telefone_contato': 'seu telefone para contato com DDD'}
-            property_missing = [key for key in REQUIRED if not current.get(key)]
+            pending_fields = pending(current)
+            property_missing = [key for key in required_fields(current) if not current.get(key)]
             contact_missing = [key for key in CONTACT_REQUIRED if not current.get(key)]
             offered = bool(row['OpcionaisOferecidos'])
             if property_missing:
-                reply = 'Claro, vamos continuar! Para seguir, me informe ' + ' e '.join(labels[key] for key in property_missing[:2]) + '.'
+                reply = 'Claro, vamos continuar! Para seguir, me informe ' + ' e '.join(LABELS[key] for key in property_missing[:2]) + '.'
             elif not offered:
-                reply = 'Claro, vamos continuar! Deseja informar metragem, quartos, banheiros, vagas ou valor máximo? Esses detalhes são opcionais; pode pular.'
+                reply = ('Claro, vamos continuar! Tem preferência de bairro ou tipo de imóvel para o investimento? Esses detalhes são opcionais; pode pular.'
+                         if is_investment(current) else
+                         'Claro, vamos continuar! Deseja informar metragem, quartos, banheiros, vagas ou valor máximo? Esses detalhes são opcionais; pode pular.')
                 offered = True
             elif contact_missing:
-                reply = 'Claro, vamos continuar! Antes de encaminhar ao consultor, preciso de ' + ' e '.join(labels[key] for key in contact_missing) + '.'
+                reply = 'Claro, vamos continuar! Antes de encaminhar ao consultor, preciso de ' + ' e '.join(LABELS[key] for key in contact_missing) + '.'
             else:
                 reply = 'Claro! Seus dados já estão completos. Você gostaria de alterar alguma informação ou encerrar o atendimento para aguardar o contato do consultor?'
             result = {'conversa_id': body.conversa_id, 'mensagem_id': body.mensagem_id,
@@ -183,7 +210,7 @@ def respond(body: AgentRequest):
                 'resposta': llm.PRIVATE_DATA_REPLY, 'status': 'ativa',
                 'aguardando_confirmacao': bool(row['AguardandoConfirmacao']),
                 'dados': current, 'aguardando_retomada': False,
-                'campos_obrigatorios_pendentes': [key for key in REQUIRED + CONTACT_REQUIRED if not current.get(key)],
+                'campos_obrigatorios_pendentes': pending(current),
             }
             database.finish_response(body.conversa_id, body.telefone, body.mensagem_id,
                                      token, current, False, bool(row['OpcionaisOferecidos']), result)
@@ -195,7 +222,7 @@ def respond(body: AgentRequest):
                 'resposta': llm.FALLBACK_REPLY, 'status': 'ativa',
                 'aguardando_confirmacao': bool(row['AguardandoConfirmacao']),
                 'dados': current, 'aguardando_retomada': False,
-                'campos_obrigatorios_pendentes': [key for key in REQUIRED + CONTACT_REQUIRED if not current.get(key)],
+                'campos_obrigatorios_pendentes': pending(current),
             }
             database.finish_response(body.conversa_id, body.telefone, body.mensagem_id,
                                      token, current, False, bool(row['OpcionaisOferecidos']), result)
@@ -203,23 +230,29 @@ def respond(body: AgentRequest):
         updates = extracted.dados.model_dump(exclude_none=True)
         changed = {key: value for key, value in updates.items() if current.get(key) != value}
         current.update(updates)
-        missing = [key for key in REQUIRED if not current.get(key)]
+        missing = [key for key in required_fields(current) if not current.get(key)]
         contact_missing = [key for key in CONTACT_REQUIRED if not current.get(key)]
-        optional = [key for key in llm.Preferences.model_fields if key not in REQUIRED + CONTACT_REQUIRED and current.get(key) is None]
+        optional = [key for key in optional_fields(current) if current.get(key) is None]
         preferences_ready = not missing and (not optional or extracted.dispensar_opcionais or bool(row['OpcionaisOferecidos']))
         complete = preferences_ready and not contact_missing
         offered = bool(row['OpcionaisOferecidos']) or not missing
         closing = complete and bool(row['AguardandoConfirmacao']) and extracted.encerrar_conversa
+        consultant = 'um especialista em investimentos' if is_investment(current) else 'um consultor'
         instruction = ('Confirme brevemente as preferências registradas, sem perguntas e sem dizer que a conversa foi encerrada.' if complete else
-                       'Antes de encaminhar ao consultor, peça estes dados obrigatórios: ' + ', '.join(contact_missing) + '. Peça o telefone para contato com DDD; ele é um campo separado do identificador do WhatsApp.' if preferences_ready else
-                       'Pergunte somente estes campos obrigatórios ausentes: ' + ', '.join(missing[:2]) if missing else
+                       f'Antes de encaminhar para {consultant}, peça estes dados obrigatórios: ' + ', '.join(contact_missing) + '. Peça o telefone para contato com DDD; ele é um campo separado do identificador do WhatsApp.' if preferences_ready else
+                       'Pergunte somente estes campos obrigatórios ausentes: ' + ', '.join(LABELS[key] for key in missing[:2]) if missing else
                        'Pergunte em uma única mensagem quais destas preferências opcionais deseja informar: ' + ', '.join(optional) + '. Explique que pode pular ou informar só algumas.')
+        if is_investment(current) and not complete:
+            instruction += ' O cliente tem perfil investidor: use linguagem de investimento e diga que ele será direcionado a um especialista.'
+        suggestions = catalogo.sugerir(current) if complete and not closing else []
         reply = '' if complete else llm.generate_reply(current, instruction, messages)
         if complete:
             # Esta etapa precisa corresponder exatamente ao estado persistido, sem depender da redação da IA.
-            reply = ('Conversa encerrada. Um consultor irá entrar em contato em breve. Obrigado!' if closing else
-                     'Suas preferências foram salvas. Um consultor irá entrar em contato. Deseja encerrar a conversa ou alterar algo?')
+            reply = (f'Conversa encerrada. {consultant.capitalize()} irá entrar em contato em breve. Obrigado!' if closing else
+                     catalogo.formatar(suggestions, current) + '\n\n'
+                     f'Suas preferências foram salvas. {consultant.capitalize()} irá entrar em contato. Deseja encerrar a conversa ou alterar algo?')
         if complete and row['AguardandoConfirmacao'] and not closing:
+            search_changed = bool(SEARCH_FIELDS & changed.keys())
             instruction = (
                 'O cadastro ja esta completo e a conversa permanece aberta. Responda primeiro a ultima mensagem do cliente. '
                 'Se houve correcao, confirme apenas os campos alterados, sem repetir o cadastro inteiro. '
@@ -228,11 +261,17 @@ def respond(body: AgentRequest):
                 'Nao repita automaticamente a frase Suas preferencias foram salvas nem a pergunta de encerramento. '
                 'Nao diga que a conversa foi encerrada. Campos alterados neste turno: '
                 + json.dumps(changed, ensure_ascii=False)
+                + ('. Nao liste imoveis; a lista atualizada sera anexada depois da sua resposta.' if search_changed else
+                   '. Imoveis do catalogo aderentes ao perfil (cite somente estes, se perguntarem): '
+                   + json.dumps(suggestions, ensure_ascii=False))
             )
             reply = llm.generate_reply(current, instruction, messages)
+            if search_changed:
+                reply += '\n\n' + catalogo.formatar(suggestions, current)
         result = {'conversa_id': body.conversa_id, 'mensagem_id': body.mensagem_id, 'resposta': reply,
                   'status': 'encerrada' if closing else 'ativa', 'aguardando_confirmacao': complete and not closing,
-                  'dados': current, 'campos_obrigatorios_pendentes': missing + contact_missing, 'aguardando_retomada':False}
+                  'dados': current, 'campos_obrigatorios_pendentes': missing + contact_missing,
+                  'imoveis_sugeridos': [imovel['id'] for imovel in suggestions], 'aguardando_retomada': False}
         database.finish_response(body.conversa_id, body.telefone, body.mensagem_id,
                                  token, current, complete, offered, result)
         return result
