@@ -94,15 +94,16 @@ export function configurarMensagens(sock) {
                         numeroRemetente
                     )
 
-                    if (
-                        numeroRemetente !== NUMERO_TESTE
-                    ) {
-                        console.log(
-                            '[IGNORADA] Número não autorizado.'
-                        )
+                    // Trecho de código comentado para permitir apenas mensagens de um número específico (NUMERO_TESTE). Se quiser habilitar, descomente o bloco abaixo.
+                    // if (
+                    //     numeroRemetente !== NUMERO_TESTE
+                    // ) {
+                    //     console.log(
+                    //         '[IGNORADA] Número não autorizado.'
+                    //     )
 
-                        continue
-                    }
+                    //     continue
+                    // }
 
                     const texto =
                         mensagem.message?.conversation ||
